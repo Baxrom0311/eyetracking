@@ -1,0 +1,116 @@
+import os
+
+# ── Kamera ──────────────────────────────────────────────
+CAMERA_INDEX        = 0        # 0 = birinchi (laptop) kamera
+CAMERA_WIDTH        = 640
+CAMERA_HEIGHT       = 480
+CAMERA_FPS          = 30
+LOW_LIGHT_THRESHOLD = 40       # brightness 0-255, shundan past = LOW_LIGHT
+CAMERA_READ_FAIL_LIMIT = 30    # ketma-ket bo'sh frame bo'lsa kamera xatosi
+PREVIEW_MIRROR      = True
+
+# ── MediaPipe ───────────────────────────────────────────
+MP_MAX_FACES        = 1
+MP_MIN_DETECT_CONF  = 0.7
+MP_MIN_TRACK_CONF   = 0.7
+MP_REFINE_LANDMARKS = True     # iris uchun majburiy
+FACE_LANDMARKER_MODEL = os.path.join(
+    os.path.dirname(__file__), "models", "face_landmarker.task"
+)
+FACE_LANDMARKER_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
+
+# Iris landmark indekslari (MediaPipe Face Mesh)
+LEFT_IRIS   = [474, 475, 476, 477]
+RIGHT_IRIS  = [469, 470, 471, 472]
+# Blink uchun ko'z landmark indekslari (EAR)
+LEFT_EYE_TOP    = 159
+LEFT_EYE_BOTTOM = 145
+LEFT_EYE_LEFT   = 33
+LEFT_EYE_RIGHT  = 133
+RIGHT_EYE_TOP   = 386
+RIGHT_EYE_BOTTOM= 374
+RIGHT_EYE_LEFT  = 362
+RIGHT_EYE_RIGHT = 263
+
+# ── Blink ───────────────────────────────────────────────
+BLINK_EAR_THRESHOLD  = 0.20   # EAR ratio shundan past = ko'z yumilgan
+BLINK_CONSEC_FRAMES  = 2      # necha ketma-ket frame = blink
+DOUBLE_BLINK_MS      = 500    # ms ichida ikki blink = double blink (click)
+LONG_BLINK_MS        = 800    # ms uzun blink = right click
+NO_FACE_DELAY_SEC    = 0.5    # yuz yo'qolsa shuncha kutib NO_FACE ga o'tadi
+HEAD_AWAY_THRESHOLD  = 0.22   # enter threshold
+HEAD_AWAY_EXIT_THRESHOLD = 0.14
+HEAD_AWAY_DELAY_SEC  = 0.6    # bosh chetga ketganda qisqa flickerlarni filtrlash
+HEAD_OFFSET_SMOOTHING_ALPHA = 0.25
+
+# ── Head Pose → Gaze Blend (gibrid model) ──────────────
+HEAD_MOVEMENT_WEIGHT = 1.5    # Bosh harakati gaze ga qancha ta'sir qiladi
+HEAD_YAW_SCALE       = 0.6    # Yaw (gorizontal burilish) kuchaytirgich
+HEAD_PITCH_SCALE     = 0.8    # Pitch (vertikal burilish) kuchaytirgich
+HEAD_POSE_SMOOTHING  = 0.3    # Head pose uchun alohida smoothing (0=sekin, 1=xom)
+
+# ── Gaze / Cursor ───────────────────────────────────────
+SMOOTHING_ALPHA      = 0.35   # Exponential smoothing (kattaroq = tezroq)
+CURSOR_SPEED         = 1.0
+MOVE_THRESHOLD_PX    = 4      # Jitter filtri
+PYAUTOGUI_PAUSE      = 0.0
+GAZE_X_SENSITIVITY   = 1.4    # Iris gaze uchun (gibrid modelda kamroq kerak)
+GAZE_Y_SENSITIVITY   = 1.6    # Iris gaze uchun (gibrid modelda kamroq kerak)
+LINEAR_GAZE_X_MIN    = 0.20   # kalibrasiyasiz fallback diapazon
+LINEAR_GAZE_X_MAX    = 0.80
+LINEAR_GAZE_Y_MIN    = 0.20
+LINEAR_GAZE_Y_MAX    = 0.80
+
+# ── Kalibrasiya ─────────────────────────────────────────
+CALIB_POINTS         = 9      # 9 nuqta
+CALIB_DWELL_SEC      = 3.0    # Diqqatni jamlash uchun ko'proq vaqt
+CALIB_FILE           = os.path.join(os.path.dirname(__file__), "calibration.json")
+CALIB_PREVIEW_SCALE  = 0.22
+CALIB_RIDGE_ALPHA    = 0.05   # Alpha kattalashtirildi (model barqarorligi uchun)
+CALIB_MIN_GAZE_SPAN_X = 0.06  # Ekstremal hollarni ham qabul qilish uchun kichraytirildi
+CALIB_MIN_GAZE_SPAN_Y = 0.04
+
+# ── Dwell click ─────────────────────────────────────────
+DWELL_CLICK_MS       = 2000   # 2 soniya = click (cursor hissiz tursa)
+DWELL_RADIUS_PX      = 40     # Bu radiusdan chiqsa timer qayta boshlanadi
+DWELL_SUPPRESS_AFTER_ACTION_SEC = 2.5
+
+# ── Zona tahlili (10s dwell → xabar) ───────────────────
+ZONE_DWELL_SEC       = 10     # Bir zonada shuncha sec = trigger
+ZONE_COOLDOWN_SEC    = 30     # Trigger keyin shuncha sec kutiladi (spam oldini olish)
+
+# Ekran 5 zonaga bo'linadi (nisbiy, 0.0-1.0)
+# [x_min, y_min, x_max, y_max, nom, xabar_matni]
+SCREEN_ZONES = [
+    [0.0,  0.0,  0.5,  0.5,  "Yuqori chap",   "Foydalanuvchi ekranning yuqori chap qismiga qarayapti"],
+    [0.5,  0.0,  1.0,  0.5,  "Yuqori o'ng",   "Foydalanuvchi ekranning yuqori o'ng qismiga qarayapti"],
+    [0.0,  0.5,  0.5,  1.0,  "Pastki chap",   "Foydalanuvchi ekranning pastki chap qismiga qarayapti"],
+    [0.5,  0.5,  1.0,  1.0,  "Pastki o'ng",   "Foydalanuvchi ekranning pastki o'ng qismiga qarayapti"],
+    [0.35, 0.35, 0.65, 0.65, "Markaz",        "Foydalanuvchi ekran markaziga qarayapti"],
+]
+
+# ── TTS ─────────────────────────────────────────────────
+TTS_RATE             = 150    # So'z/daqiqa
+TTS_VOLUME           = 1.0    # 0.0 - 1.0
+TTS_LANGUAGE         = "uz"   # uz, ru, en
+TTS_ENABLED          = True
+
+# ── Android WebSocket ───────────────────────────────────
+ANDROID_WS_HOST      = "0.0.0.0"
+ANDROID_WS_PORT      = 8765
+ANDROID_ENABLED      = True
+
+# ── Overlay UI ──────────────────────────────────────────
+OVERLAY_WINDOW_NAME  = "GazeSpeak"
+OVERLAY_SHOW_FPS     = True
+OVERLAY_SHOW_ZONES   = True
+OVERLAY_CURSOR_RADIUS= 12
+OVERLAY_CURSOR_COLOR = (0, 220, 120)   # BGR yashil
+OVERLAY_DWELL_COLOR  = (0, 180, 255)   # BGR sariq
+OVERLAY_ERROR_COLOR  = (0, 60, 220)    # BGR qizil
+OVERLAY_FONT_SCALE   = 0.55
+ZONE_FIRED_BANNER_SEC = 3.0
+
+# ── Debug ────────────────────────────────────────────────
+DEBUG_MODE           = True    # True = extra loglar, landmark chizish
+LOG_FILE             = "gazespeak.log"
