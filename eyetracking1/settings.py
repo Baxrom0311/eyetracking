@@ -1,5 +1,12 @@
 import os
 
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
 # ── Kamera ──────────────────────────────────────────────
 CAMERA_INDEX        = 0        # 0 = birinchi (laptop) kamera
 CAMERA_WIDTH        = 640
@@ -95,12 +102,12 @@ SCREEN_ZONES = [
 TTS_RATE             = 150    # So'z/daqiqa
 TTS_VOLUME           = 1.0    # 0.0 - 1.0
 TTS_LANGUAGE         = "uz"   # uz, ru, en
-TTS_ENABLED          = True
+TTS_ENABLED          = _env_bool("GAZESPEAK_TTS_ENABLED", True)
 
 # ── Android WebSocket ───────────────────────────────────
 ANDROID_WS_HOST      = "0.0.0.0"
 ANDROID_WS_PORT      = 8765
-ANDROID_ENABLED      = True
+ANDROID_ENABLED      = _env_bool("GAZESPEAK_ANDROID_ENABLED", True)
 
 # ── Overlay UI ──────────────────────────────────────────
 OVERLAY_WINDOW_NAME  = "GazeSpeak"
@@ -114,7 +121,7 @@ OVERLAY_FONT_SCALE   = 0.55
 ZONE_FIRED_BANNER_SEC = 3.0
 
 # ── Debug ────────────────────────────────────────────────
-DEBUG_MODE           = True    # True = extra loglar, landmark chizish
+DEBUG_MODE           = _env_bool("GAZESPEAK_DEBUG", True)
 LOG_FILE             = "gazespeak.log"
 LOG_MAX_BYTES        = 1_500_000
 LOG_BACKUP_COUNT     = 3

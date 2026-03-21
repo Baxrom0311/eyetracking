@@ -1,0 +1,39 @@
+# Python cache / build
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+build/
+dist/
+*.egg
+
+# Virtual environments
+.venv/
+.venv312/
+venv/
+env/
+
+# IDE / editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+gazespeak.log
+
+# Local runtime/config
+.env
+.env.local
+calibration.json
+
+# MediaPipe model cache
+models/*.task
+eyetracking1/models/*.task

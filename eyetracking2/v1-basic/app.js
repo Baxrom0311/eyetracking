@@ -95,6 +95,9 @@ function describeWebgazerError(error) {
   if (name === "NotReadableError" || /Could not start video source|TrackStartError/i.test(raw)) {
     return "Kamera band yoki boshqa dastur ishlatyapti.";
   }
+  if (/Failed to fetch/i.test(raw)) {
+    return "WebGazer runtime fayllari yuklanmadi. Local server orqali oching yoki vendor assetlarni tekshiring.";
+  }
   if (/secure context|https|localhost|getUserMedia/i.test(raw)) {
     return "Sahifani localhost yoki https orqali oching.";
   }
@@ -350,7 +353,7 @@ async function startTracker() {
   setStatus("Loading", "idle");
 
   try {
-    window.webgazer.params.faceMeshSolutionPath = "https://webgazer.cs.brown.edu/mediapipe/face_mesh";
+    window.webgazer.params.faceMeshSolutionPath = `${new URL("../vendor/mediapipe/face_mesh/", window.location.href).href}`;
     window.webgazer.params.saveDataAcrossSessions = false;
     window.webgazer.params.showVideo = state.previewVisible;
     window.webgazer.params.showFaceOverlay = state.previewVisible;
