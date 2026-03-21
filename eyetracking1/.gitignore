@@ -32,8 +32,6 @@ models/*.task
 *.log
 gazespeak.log
 
-# Kalibrasiya fayllari
-
 # Environment
 .env
 .env.local
