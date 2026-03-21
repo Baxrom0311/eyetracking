@@ -56,6 +56,7 @@ const els = {
   trailCanvas: document.querySelector("#trail-canvas"),
   steps: [...document.querySelectorAll("[data-step]")],
   zones: [...document.querySelectorAll("[data-zone]")],
+  zoneCards: [...document.querySelectorAll("[data-zone-tile]")],
 };
 
 const ctx = els.trailCanvas.getContext("2d");
@@ -140,6 +141,13 @@ function setPhase(phase) {
     tracking: "Tracking",
   };
   els.phaseBadge.textContent = labelMap[phase] ?? phase;
+  const chipClass = {
+    idle: "idle",
+    calibration: "calibrating",
+    validation: "paused",
+    tracking: "ready",
+  };
+  els.phaseBadge.className = `status-chip ${chipClass[phase] ?? "idle"}`;
   els.metricPhase.textContent = labelMap[phase] ?? phase;
 
   const rank = {
@@ -312,6 +320,11 @@ function syncZoneClasses(activeId, firedId) {
     zoneNode.classList.toggle("active", zoneId === activeId);
     zoneNode.classList.toggle("fired", zoneId === firedId);
   }
+  for (const zoneNode of els.zoneCards) {
+    const zoneId = Number(zoneNode.dataset.zoneTile);
+    zoneNode.classList.toggle("active", zoneId === activeId);
+    zoneNode.classList.toggle("fired", zoneId === firedId);
+  }
 }
 
 function refreshTelemetry() {
@@ -414,17 +427,14 @@ async function runValidation() {
 }
 
 function createCalibrationButtons() {
-  for (const point of CALIBRATION_POINTS) {
+  CALIBRATION_POINTS.forEach((point, index) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "target";
-    button.style.pointerEvents = "auto";
-    button.style.cursor = "pointer";
+    button.className = "calibration-point";
     button.style.left = `${point.x}%`;
     button.style.top = `${point.y}%`;
-    button.style.borderColor = "var(--accent)";
-    button.style.boxShadow = "0 0 0 14px rgba(153, 226, 180, 0.08)";
     button.dataset.calibration = point.id;
+    button.textContent = String(index + 1);
     button.addEventListener("click", async () => {
       const current = state.calibrationHits.get(point.id) ?? 0;
       const next = current + 1;
@@ -432,7 +442,8 @@ function createCalibrationButtons() {
       button.style.opacity = String(Math.max(0.35, 1 - next * 0.12));
       if (next >= CALIBRATION_CLICKS) {
         button.disabled = true;
-        button.style.opacity = "0.3";
+        button.classList.add("done");
+        button.style.opacity = "0.4";
       }
       const done = [...state.calibrationHits.values()].filter((value) => value >= CALIBRATION_CLICKS).length;
       setMessage(
@@ -455,7 +466,7 @@ function createCalibrationButtons() {
       }
     });
     els.stage.append(button);
-  }
+  });
 }
 
 async function startFlow() {
