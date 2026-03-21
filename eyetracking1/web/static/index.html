@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GazeSpeak AAC Communicator</title>
+    <meta name="description" content="GazeSpeak AAC communicator — brauzer ichida eye-gaze orqali matn tuzish va gapirtirish interfeysi.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header id="header">
+        <div class="brand-block">
+            <div class="logo">
+                <span class="logo-icon">◉</span>
+                <div>
+                    <span class="logo-text">GazeSpeak</span>
+                    <p class="logo-subtitle">AAC communicator prototype</p>
+                </div>
+            </div>
+        </div>
+
+        <nav class="header-nav" aria-label="Main navigation">
+            <button id="btn-board-view" class="nav-pill is-active gaze-target" data-action="show-board" data-label="Board">
+                Board
+            </button>
+            <button id="btn-open-session" class="nav-pill gaze-target" data-action="open-session" data-label="Session">
+                Session
+            </button>
+            <button id="btn-open-insights" class="nav-pill gaze-target" data-action="open-insights" data-label="Health signals">
+                Health
+            </button>
+        </nav>
+
+        <div class="header-status">
+            <div id="status-badge" class="status-badge status-disconnected">
+                <span class="status-dot"></span>
+                <span id="status-text">Kamerani oching</span>
+            </div>
+            <span id="fps-display" class="fps-badge">0 FPS</span>
+        </div>
+    </header>
+
+    <main id="main-content">
+        <section id="workspace">
+            <section id="composer-card" class="glass-card">
+                <div class="section-head">
+                    <div>
+                        <p class="eyebrow">Message Builder</p>
+                        <h1>Ko'z bilan tanlang, ovozga aylantiring</h1>
+                    </div>
+
+                    <div class="composer-actions">
+                        <button id="btn-backspace" class="btn btn-ghost gaze-target" data-action="backspace" data-label="Orqaga">
+                            ⌫ Orqaga
+                        </button>
+                        <button id="btn-clear-message" class="btn btn-secondary gaze-target" data-action="clear" data-label="Tozalash">
+                            Tozalash
+                        </button>
+                        <button id="btn-speak" class="btn btn-primary gaze-target" data-action="speak" data-label="Gapirtirish">
+                            Gapirtirish
+                        </button>
+                    </div>
+                </div>
+
+                <div id="message-display" class="message-display" aria-live="polite">
+                    <span class="message-placeholder">Tanlangan so'zlar shu yerda yig'iladi</span>
+                </div>
+            </section>
+
+            <section id="board-shell" class="glass-card">
+                <aside id="board-nav" class="board-nav"></aside>
+
+                <div id="board-main">
+                    <div class="board-head">
+                        <div>
+                            <p id="board-kicker" class="eyebrow">Communication Board</p>
+                            <h2 id="board-title">Core Words</h2>
+                            <p id="board-subtitle" class="board-subtitle">Eng ko'p ishlatiladigan asosiy so'zlar.</p>
+                        </div>
+
+                        <div class="focus-card">
+                            <span class="focus-label">Fokus</span>
+                            <span id="info-focus" class="focus-value">—</span>
+                        </div>
+                    </div>
+
+                    <div id="aac-grid" class="aac-grid"></div>
+                </div>
+            </section>
+        </section>
+    </main>
+
+    <div id="session-modal" class="session-modal hidden" aria-hidden="true">
+        <div class="session-modal-backdrop" data-session-close></div>
+
+        <section class="session-window">
+            <div class="session-window-head">
+                <div>
+                    <p class="eyebrow">Session</p>
+                    <h2>Tracking panel</h2>
+                </div>
+
+                <button id="btn-close-session" class="session-close gaze-target" data-action="close-session" data-label="Sessionni yopish">
+                    Yopish
+                </button>
+            </div>
+
+            <div id="camera-container">
+                <video id="camera-video" autoplay playsinline muted></video>
+                <canvas id="overlay-canvas"></canvas>
+            </div>
+
+            <div id="controls" class="controls-bar">
+                <button id="btn-start-camera" class="btn btn-primary">
+                    Kamerani ochish
+                </button>
+                <button id="btn-calibrate" class="btn btn-accent" disabled>
+                    Kalibratsiya
+                </button>
+                <button id="btn-recalibrate" class="btn btn-secondary" disabled>
+                    Qayta kalibratsiya
+                </button>
+            </div>
+
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">Holat</span>
+                    <span id="info-state" class="info-value">—</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Yuz</span>
+                    <span id="info-face" class="info-value">—</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Gaze</span>
+                    <span id="info-gaze" class="info-value">—</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Kalibratsiya</span>
+                    <span id="info-calib" class="info-value">Yo'q</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Server zona</span>
+                    <span id="info-zone" class="info-value">—</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">So'zlar</span>
+                    <span id="info-words" class="info-value">0</span>
+                </div>
+                <div class="info-item info-item-wide">
+                    <span class="info-label">Kayfiyat</span>
+                    <span id="info-emotion" class="info-value">—</span>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div id="insights-modal" class="session-modal hidden" aria-hidden="true">
+        <div class="session-modal-backdrop" data-insights-close></div>
+
+        <section class="session-window insights-window">
+            <div class="session-window-head">
+                <div>
+                    <p class="eyebrow">Health Signals</p>
+                    <h2>Non-diagnostic face analysis</h2>
+                </div>
+
+                <button id="btn-close-insights" class="session-close gaze-target" data-action="close-insights" data-label="Health oynani yopish">
+                    Yopish
+                </button>
+            </div>
+
+            <div class="insights-disclaimer">
+                Bu panel tibbiy tashxis bermaydi. U faqat yuz ifodasi, ko'z yumish va bosh holatidan oddiy signal chiqaradi. Yuqori signal chiqsa ham bu kasallik degani emas.
+            </div>
+
+            <div class="insights-grid">
+                <article class="insight-card tone-soft">
+                    <span class="insight-kicker">Charchoq signali</span>
+                    <strong id="insight-fatigue-level" class="insight-level">Past</strong>
+                    <p id="insight-fatigue-note" class="insight-note">Blink va uzun blink hali kam kuzatildi.</p>
+                </article>
+
+                <article class="insight-card tone-warm">
+                    <span class="insight-kicker">Stress / noqulaylik</span>
+                    <strong id="insight-stress-level" class="insight-level">Past</strong>
+                    <p id="insight-stress-note" class="insight-note">Jiddiy yoki hayron ekspressiya kuchli emas.</p>
+                </article>
+
+                <article class="insight-card tone-cool">
+                    <span class="insight-kicker">Diqqat barqarorligi</span>
+                    <strong id="insight-attention-level" class="insight-level">—</strong>
+                    <p id="insight-attention-note" class="insight-note">Tracking namunasi yig'ilmoqda.</p>
+                </article>
+
+                <article class="insight-card tone-neutral">
+                    <span class="insight-kicker">Joriy ekspressiya</span>
+                    <strong id="insight-expression-level" class="insight-level">—</strong>
+                    <p id="insight-expression-note" class="insight-note">So'nggi yuz ifodasi shu yerda ko'rinadi.</p>
+                </article>
+
+                <article class="insight-card tone-wide">
+                    <span class="insight-kicker">Ogohlantirish</span>
+                    <strong id="insight-summary" class="insight-level">Klinik xulosa emas</strong>
+                    <p id="insight-summary-note" class="insight-note">Agar yuqori signal bir necha daqiqa davom etsa, bu faqat qo'shimcha kuzatuv sababi bo'lishi mumkin. Shifokor qarorini almashtirmaydi.</p>
+                </article>
+            </div>
+        </section>
+    </div>
+
+    <div id="calibration-overlay" class="calibration-overlay hidden">
+        <canvas id="calibration-canvas"></canvas>
+        <div id="calib-status" class="calib-status">
+            <span id="calib-text">Kalibratsiya boshlanmoqda...</span>
+        </div>
+    </div>
+
+    <div id="banner" class="banner hidden">
+        <span id="banner-text"></span>
+    </div>
+
+    <div id="screen-gaze-dot" class="screen-gaze-dot hidden"></div>
+
+    <script src="/static/js/main.js?v=20260321-4" type="module"></script>
+</body>
+</html>

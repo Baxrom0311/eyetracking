@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebGazer V2 Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="masthead">
+      <div>
+        <a class="backlink" href="../">← Variantlar</a>
+        <p class="eyebrow">Version 2</p>
+        <h1>WebGazer Lab</h1>
+        <p class="lede">Guided calibration, validation score, live trail va session export bilan kuchliroq laboratoriya varianti.</p>
+      </div>
+      <div class="phase-panel">
+        <div id="phase-badge" class="phase-badge">Idle</div>
+        <p class="phase-note">Browser ichida ishlaydi. Native OS cursor control yo'q.</p>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="stage-card">
+        <div id="stage" class="stage">
+          <canvas id="trail-canvas" class="trail-canvas"></canvas>
+          <div class="grid-overlay"></div>
+          <div id="zone-layer" class="zone-layer">
+            <div class="zone" data-zone="0"><span>Yuqori chap</span></div>
+            <div class="zone" data-zone="1"><span>Yuqori o'ng</span></div>
+            <div class="zone" data-zone="2"><span>Pastki chap</span></div>
+            <div class="zone" data-zone="3"><span>Pastki o'ng</span></div>
+            <div class="zone zone-center" data-zone="4"><span>Markaz</span></div>
+          </div>
+          <div id="gaze-cursor" class="gaze-cursor hidden"></div>
+          <div id="target" class="target hidden"></div>
+          <div id="message-box" class="message-box">
+            <p id="message-eyebrow" class="message-eyebrow">Holat</p>
+            <h2 id="message-title">WebGazer Lab tayyor</h2>
+            <p id="message-body">Start bosilgach kamera ruxsatini bering. Keyin calibration va validation avtomatik oqimda yuradi.</p>
+          </div>
+        </div>
+      </section>
+
+      <aside class="rail">
+        <section class="card control-card">
+          <h2>Control</h2>
+          <div class="button-grid">
+            <button id="btn-start" class="btn btn-primary">Start</button>
+            <button id="btn-recalibrate" class="btn btn-secondary" disabled>Recalibrate</button>
+            <button id="btn-preview" class="btn btn-secondary" disabled>Preview OFF</button>
+            <button id="btn-export" class="btn btn-secondary" disabled>Export JSON</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Flow</h2>
+          <div class="step-list">
+            <div class="step" data-step="start"><strong>1</strong><span>Start</span></div>
+            <div class="step" data-step="calibration"><strong>2</strong><span>Calibration</span></div>
+            <div class="step" data-step="validation"><strong>3</strong><span>Validation</span></div>
+            <div class="step" data-step="tracking"><strong>4</strong><span>Tracking</span></div>
+          </div>
+        </section>
+
+        <section class="card telemetry">
+          <h2>Telemetry</h2>
+          <div class="metric-list">
+            <div class="metric"><span>Phase</span><strong id="metric-phase">Idle</strong></div>
+            <div class="metric"><span>Gaze</span><strong id="metric-gaze">—</strong></div>
+            <div class="metric"><span>Samples</span><strong id="metric-samples">0</strong></div>
+            <div class="metric"><span>Validation error</span><strong id="metric-error">—</strong></div>
+            <div class="metric"><span>ROI pass</span><strong id="metric-roi">—</strong></div>
+            <div class="metric"><span>Zona</span><strong id="metric-zone">—</strong></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Validation Points</h2>
+          <div id="validation-list" class="validation-list">
+            <p class="empty">Validation hali ishlamagan.</p>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Session Log</h2>
+          <div id="event-log" class="event-log">
+            <p class="empty">Hali event yo'q.</p>
+          </div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script src="https://webgazer.cs.brown.edu/webgazer.js"></script>
+  <script type="module" src="./app.js?v=20260320-4"></script>
+</body>
+</html>

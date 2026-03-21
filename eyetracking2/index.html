@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebGazer Variants</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b1318;
+      --bg-soft: #101d24;
+      --card: rgba(240, 248, 255, 0.06);
+      --stroke: rgba(240, 248, 255, 0.12);
+      --text: #edf7f5;
+      --muted: #9fb8b4;
+      --accent: #4fd1c5;
+      --accent-warm: #f6ad55;
+      --danger: #fc8181;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+      --radius: 28px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Manrope", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(79, 209, 197, 0.18), transparent 35%),
+        radial-gradient(circle at top right, rgba(246, 173, 85, 0.14), transparent 30%),
+        linear-gradient(160deg, #071016, #0f1c22 54%, #12191f);
+    }
+
+    .shell {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 40px 0 56px;
+    }
+
+    .hero {
+      display: grid;
+      gap: 18px;
+      margin-bottom: 28px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      width: fit-content;
+      align-items: center;
+      gap: 10px;
+      border: 1px solid var(--stroke);
+      padding: 10px 14px;
+      border-radius: 999px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(16px);
+    }
+
+    h1 {
+      margin: 0;
+      font-family: "Space Grotesk", sans-serif;
+      font-size: clamp(2.6rem, 5vw, 5rem);
+      line-height: 0.96;
+      letter-spacing: -0.05em;
+      max-width: 10ch;
+    }
+
+    .lede {
+      margin: 0;
+      max-width: 64ch;
+      color: var(--muted);
+      font-size: 1.02rem;
+      line-height: 1.7;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 22px;
+      margin-top: 30px;
+    }
+
+    .card {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--stroke);
+      border-radius: var(--radius);
+      padding: 28px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03)),
+        var(--card);
+      backdrop-filter: blur(20px);
+      box-shadow: var(--shadow);
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: auto -20% -30% auto;
+      width: 220px;
+      height: 220px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(79, 209, 197, 0.18), transparent 70%);
+      pointer-events: none;
+    }
+
+    .card.warm::before {
+      background: radial-gradient(circle, rgba(246, 173, 85, 0.18), transparent 70%);
+    }
+
+    .card h2 {
+      margin: 0 0 10px;
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 2rem;
+      letter-spacing: -0.04em;
+    }
+
+    .sub {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 22px;
+    }
+
+    .pill {
+      padding: 9px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--stroke);
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+      font-size: 0.92rem;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 140px;
+      padding: 12px 18px;
+      border-radius: 16px;
+      font-weight: 700;
+      text-decoration: none;
+      color: #071016;
+      background: linear-gradient(135deg, var(--accent), #8de2c8);
+      transition: transform 180ms ease, box-shadow 180ms ease;
+      box-shadow: 0 14px 34px rgba(79, 209, 197, 0.28);
+    }
+
+    .warm .button {
+      background: linear-gradient(135deg, var(--accent-warm), #ffd66e);
+      box-shadow: 0 14px 34px rgba(246, 173, 85, 0.26);
+    }
+
+    .button:hover {
+      transform: translateY(-2px);
+    }
+
+    .note {
+      margin-top: 28px;
+      color: var(--muted);
+      line-height: 1.7;
+      padding: 18px 20px;
+      border-radius: 20px;
+      border: 1px solid var(--stroke);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    @media (max-width: 900px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        max-width: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">WebGazer.js • 2 variant • localhost</div>
+      <h1>Browser ichida gaze tracking sinov maydoni</h1>
+      <p class="lede">
+        Bu papka ichida siz uchun 2 xil WebGazer.js varianti tayyorlandi. Birinchisi tez sinov uchun sodda,
+        ikkinchisi esa calibration, validation va session export bilan kuchliroq laboratoriya usuli.
+      </p>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>V1 Basic</h2>
+        <p class="sub">
+          Start qiling, 9 nuqtali calibration bosing va darhol live gaze dot, zona dwell hamda debug preview bilan ishlating.
+        </p>
+        <div class="pills">
+          <span class="pill">Quick start</span>
+          <span class="pill">9-point click calibration</span>
+          <span class="pill">Zone dwell</span>
+          <span class="pill">Preview toggle</span>
+        </div>
+        <div class="actions">
+          <a class="button" href="./v1-basic/">Open V1</a>
+        </div>
+      </article>
+
+      <article class="card warm">
+        <h2>V2 Lab</h2>
+        <p class="sub">
+          Guided calibration, validation error hisobi, trail visual, session log va JSON export bilan ko‘proq tadqiqotga yaqin variant.
+        </p>
+        <div class="pills">
+          <span class="pill">Guided flow</span>
+          <span class="pill">Validation score</span>
+          <span class="pill">Trail canvas</span>
+          <span class="pill">Session export</span>
+        </div>
+        <div class="actions">
+          <a class="button" href="./v2-lab/">Open V2</a>
+        </div>
+      </article>
+    </section>
+
+    <section class="note">
+      WebGazer browser xavfsizligi va webcam sifatiga bog‘liq. Native desktop cursor control bu yerda yo‘q;
+      buning o‘rniga sahifa ichidagi gaze vizualizatsiya, calibration va zona triggerlar berilgan.
+    </section>
+  </main>
+</body>
+</html>

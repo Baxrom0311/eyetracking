@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebGazer V1 Basic</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div>
+        <a class="backlink" href="../">← Variantlar</a>
+        <p class="eyebrow">Version 1</p>
+        <h1>WebGazer Basic</h1>
+        <p class="lede">Tez sinov, click calibration, live gaze dot va 5 ta zona dwell trigger.</p>
+      </div>
+      <div class="status-stack">
+        <span id="status-chip" class="status-chip idle">Idle</span>
+        <span class="hint">Browser cursorini emas, sahifa ichidagi indikatorni boshqaradi.</span>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="stage-card">
+        <div id="stage" class="stage">
+          <div class="zone-grid">
+            <div class="zone zone-0" data-zone="0"><span>Yuqori chap</span></div>
+            <div class="zone zone-1" data-zone="1"><span>Yuqori o'ng</span></div>
+            <div class="zone zone-2" data-zone="2"><span>Pastki chap</span></div>
+            <div class="zone zone-3" data-zone="3"><span>Pastki o'ng</span></div>
+            <div class="zone zone-center" data-zone="4"><span>Markaz</span></div>
+          </div>
+          <div id="gaze-dot" class="gaze-dot hidden"></div>
+          <div id="banner" class="banner hidden"></div>
+          <div id="calibration-overlay" class="calibration-overlay hidden">
+            <div class="overlay-copy">
+              <h2>Calibration</h2>
+              <p>Har nuqtaga qarab 3 marta bosing. WebGazer click va cursor pozitsiyadan o‘rganadi.</p>
+              <p id="calibration-progress" class="progress-copy">0 / 9 nuqta tayyor</p>
+            </div>
+            <div id="calibration-points" class="calibration-points"></div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <section class="card controls">
+          <h2>Boshqaruv</h2>
+          <div class="actions">
+            <button id="btn-start" class="btn btn-primary">Start</button>
+            <button id="btn-pause" class="btn btn-secondary" disabled>Pause</button>
+            <button id="btn-calibrate" class="btn btn-secondary" disabled>Calibration</button>
+            <button id="btn-reset" class="btn btn-secondary" disabled>Reset</button>
+            <button id="btn-preview" class="btn btn-secondary" disabled>Preview OFF</button>
+          </div>
+        </section>
+
+        <section class="card telemetry">
+          <h2>Telemetry</h2>
+          <div class="metric-list">
+            <div class="metric"><span>Holat</span><strong id="metric-state">Idle</strong></div>
+            <div class="metric"><span>Gaze</span><strong id="metric-gaze">—</strong></div>
+            <div class="metric"><span>Zona</span><strong id="metric-zone">—</strong></div>
+            <div class="metric"><span>Dwell</span><strong id="metric-dwell">0%</strong></div>
+            <div class="metric"><span>Samples</span><strong id="metric-samples">0</strong></div>
+            <div class="metric"><span>Calibrated</span><strong id="metric-calibrated">Yo'q</strong></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Zona Holati</h2>
+          <div class="zone-map">
+            <div class="zone-tile" data-zone-tile="0">↖ Yuqori chap</div>
+            <div class="zone-tile" data-zone-tile="1">↗ Yuqori o'ng</div>
+            <div class="zone-tile" data-zone-tile="2">↙ Pastki chap</div>
+            <div class="zone-tile" data-zone-tile="3">↘ Pastki o'ng</div>
+            <div class="zone-tile center" data-zone-tile="4">⊙ Markaz</div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Log</h2>
+          <div id="event-log" class="event-log">
+            <p class="empty">Hali event yo'q.</p>
+          </div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script src="https://webgazer.cs.brown.edu/webgazer.js"></script>
+  <script type="module" src="./app.js?v=20260320-4"></script>
+</body>
+</html>

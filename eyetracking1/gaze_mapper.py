@@ -65,8 +65,35 @@ class GazeMapper:
         self._last_y        = self._smoothed_y
         logger.info(f"GazeMapper: ekran {self.screen_w}x{self.screen_h}")
 
+    def _reset_filter_state(self):
+        self._kalman = KalmanGaze()
+        self._smoothed_x = self.screen_w / 2
+        self._smoothed_y = self.screen_h / 2
+        self._last_x = self._smoothed_x
+        self._last_y = self._smoothed_y
+
+    def set_screen_size(self, screen_w: int, screen_h: int, reset_filter: bool = True):
+        screen_w = max(1, int(screen_w))
+        screen_h = max(1, int(screen_h))
+        if screen_w == self.screen_w and screen_h == self.screen_h:
+            return
+        self.screen_w = screen_w
+        self.screen_h = screen_h
+        if reset_filter:
+            self._reset_filter_state()
+        logger.info("GazeMapper: ekran o'lchami yangilandi: %dx%d", self.screen_w, self.screen_h)
+
+    def clear_calibration(self, reset_filter: bool = False):
+        self._calib_model = None
+        if reset_filter:
+            self._reset_filter_state()
+        logger.info("GazeMapper: kalibrasiya modeli tozalandi.")
+
     def set_calibration(self, model):
         """Kalibrasiya modeli o'rnatiladi (calibration.py dan keladi)."""
+        if model is None:
+            self.clear_calibration()
+            return False
         if not self._is_valid_calibration(model):
             logger.warning("GazeMapper: kalibrasiya modeli yaroqsiz, linear mapping ishlatiladi.")
             self._calib_model = None
