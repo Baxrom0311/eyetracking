@@ -32,7 +32,6 @@ gazespeak.log
 # Local runtime/config
 .env
 .env.local
-calibration.json
 
 # MediaPipe model cache
 models/*.task
