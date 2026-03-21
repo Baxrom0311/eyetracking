@@ -15,6 +15,7 @@ Tugmalar:
 import logging
 import sys
 import time
+from logging.handlers import RotatingFileHandler
 
 import cv2
 import numpy as np
@@ -35,6 +36,8 @@ from settings import (
     CAMERA_WIDTH,
     DEBUG_MODE,
     LOG_FILE,
+    LOG_BACKUP_COUNT,
+    LOG_MAX_BYTES,
     OVERLAY_WINDOW_NAME,
     PREVIEW_MIRROR,
     ZONE_FIRED_BANNER_SEC,
@@ -46,7 +49,12 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler(LOG_FILE, mode="a"),
+        RotatingFileHandler(
+            LOG_FILE,
+            maxBytes=LOG_MAX_BYTES,
+            backupCount=LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        ),
     ],
 )
 logger = logging.getLogger(__name__)
@@ -118,19 +126,16 @@ def main() -> int:
         has_valid_calibration = saved_model is not None and mapper.set_calibration(saved_model)
 
         camera.open()
-        
-        needs_calibration = not has_valid_calibration
-        calibration_started = False
-        app_start_time = time.time()
-        
+
         if has_valid_calibration:
             state_m.transition(State.TRACKING)
             _set_window_mode(calibrating=False)
             overlay.show_banner("Kalibrasiya yuklandi", 1.5)
         else:
-            state_m.transition(State.TRACKING)
-            _set_window_mode(calibrating=False)
-            overlay.show_banner("15 soniyadan so'ng kalibratsiya boshlanadi", 4.0)
+            state_m.transition(State.CALIBRATING)
+            calib_mgr.start()
+            _set_window_mode(calibrating=True)
+            overlay.show_banner("Kalibrasiya boshlandi", 1.5)
 
         debug = DEBUG_MODE
         cursor_enabled = True
@@ -168,14 +173,6 @@ def main() -> int:
 
             if debug and face_data.found:
                 tracker.draw_debug(frame, face_data)
-
-            if needs_calibration and not calibration_started:
-                if time.time() - app_start_time >= 15.0:
-                    calibration_started = True
-                    state_m.transition(State.CALIBRATING)
-                    calib_mgr.start()
-                    _set_window_mode(calibrating=True)
-                    overlay.show_banner("Kalibrasiya boshlandi", 1.5)
 
             if state_m.state == State.CALIBRATING:
                 gaze_screen = None
@@ -275,7 +272,6 @@ def main() -> int:
                 return 0
             if key == ord("c"):
                 logger.info("Qayta kalibrasiya boshlandi.")
-                needs_calibration = False
                 state_m.transition(State.CALIBRATING)
                 calib_mgr.start()
                 _set_window_mode(calibrating=True)
@@ -286,12 +282,6 @@ def main() -> int:
                 mouse.reset_dwell()
                 zones.reset_zone()
                 overlay.show_banner("Qayta kalibrasiya", 1.5)
-            if key == ord("s"):
-                if needs_calibration and not calibration_started:
-                    logger.info("Foydalanuvchi kalibratsiyani o'tkazib yubordi (SKIP).")
-                    needs_calibration = False
-                    calibration_started = False
-                    overlay.show_banner("Kalibratsiya o'tkazib yuborildi", 2.0)
             if key == ord("d"):
                 debug = not debug
                 logger.info("Debug overlay: %s", debug)

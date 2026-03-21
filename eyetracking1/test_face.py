@@ -1,6 +1,7 @@
 import logging
 import sys
 import time
+from logging.handlers import RotatingFileHandler
 
 import cv2
 
@@ -12,6 +13,8 @@ from settings import (
     CAMERA_WIDTH,
     DEBUG_MODE,
     LOG_FILE,
+    LOG_BACKUP_COUNT,
+    LOG_MAX_BYTES,
     OVERLAY_WINDOW_NAME,
     PREVIEW_MIRROR,
 )
@@ -22,7 +25,12 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler(LOG_FILE, mode="a"),
+        RotatingFileHandler(
+            LOG_FILE,
+            maxBytes=LOG_MAX_BYTES,
+            backupCount=LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        ),
     ],
 )
 logger = logging.getLogger(__name__)

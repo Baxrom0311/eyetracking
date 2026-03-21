@@ -8,8 +8,10 @@ from typing import List, Tuple, Optional
 from settings import (
     CALIB_FILE,
     CALIB_DWELL_SEC,
+    CALIB_MIN_FILTERED_SAMPLES,
     CALIB_MIN_GAZE_SPAN_X,
     CALIB_MIN_GAZE_SPAN_Y,
+    CALIB_OUTLIER_Z,
     CALIB_POINTS,
     CALIB_PREVIEW_SCALE,
     CALIB_RIDGE_ALPHA,
@@ -189,6 +191,25 @@ class CalibrationManager:
             if not pt.samples:
                 continue
             arr = np.asarray(pt.samples, dtype=float)
+            filtered = self._filter_outliers(arr)
+            if filtered.shape[0] < CALIB_MIN_FILTERED_SAMPLES:
+                logger.warning(
+                    "Nuqta (%d, %d) uchun filterdan keyin sample kam qoldi: %d/%d. Xom sample ishlatildi.",
+                    pt.screen_x,
+                    pt.screen_y,
+                    filtered.shape[0],
+                    arr.shape[0],
+                )
+                filtered = arr
+            elif filtered.shape[0] != arr.shape[0]:
+                logger.info(
+                    "Nuqta (%d, %d) outlier filtri: %d → %d sample",
+                    pt.screen_x,
+                    pt.screen_y,
+                    arr.shape[0],
+                    filtered.shape[0],
+                )
+            arr = filtered
             mx, my = arr.mean(axis=0)
             point_means.append([mx, my])
             for nx, ny in arr:
@@ -232,6 +253,26 @@ class CalibrationManager:
             logger.info(f"Kalibrasiya saqlandi: {CALIB_FILE}")
         except Exception as e:
             logger.warning(f"Kalibrasiya saqlanmadi: {e}")
+
+    @staticmethod
+    def _filter_outliers(samples: np.ndarray) -> np.ndarray:
+        """
+        Har bir calibration nuqtasi ichida keskin chalg'igan gaze sample larni olib tashlaydi.
+        Modified z-score MAD asosida ishlaydi; sample juda kam bo'lsa xom holatda qaytaradi.
+        """
+        if samples.ndim != 2 or samples.shape[0] < CALIB_MIN_FILTERED_SAMPLES:
+            return samples
+
+        median = np.median(samples, axis=0)
+        abs_dev = np.abs(samples - median)
+        mad = np.median(abs_dev, axis=0)
+        mad = np.where(mad < 1e-6, 1e-6, mad)
+        modified_z = 0.6745 * abs_dev / mad
+        keep_mask = np.all(modified_z <= CALIB_OUTLIER_Z, axis=1)
+
+        if not np.any(keep_mask):
+            return samples
+        return samples[keep_mask]
 
     # ── Web API yordamchi metodlari ─────────────────────────
     def current_point(self) -> Optional[CalibrationPoint]:

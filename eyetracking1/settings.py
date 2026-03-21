@@ -69,6 +69,8 @@ CALIB_PREVIEW_SCALE  = 0.22
 CALIB_RIDGE_ALPHA    = 0.05   # Alpha kattalashtirildi (model barqarorligi uchun)
 CALIB_MIN_GAZE_SPAN_X = 0.06  # Ekstremal hollarni ham qabul qilish uchun kichraytirildi
 CALIB_MIN_GAZE_SPAN_Y = 0.04
+CALIB_OUTLIER_Z      = 2.5    # per-point modified z-score threshold
+CALIB_MIN_FILTERED_SAMPLES = 8
 
 # ── Dwell click ─────────────────────────────────────────
 DWELL_CLICK_MS       = 2000   # 2 soniya = click (cursor hissiz tursa)
@@ -114,3 +116,5 @@ ZONE_FIRED_BANNER_SEC = 3.0
 # ── Debug ────────────────────────────────────────────────
 DEBUG_MODE           = True    # True = extra loglar, landmark chizish
 LOG_FILE             = "gazespeak.log"
+LOG_MAX_BYTES        = 1_500_000
+LOG_BACKUP_COUNT     = 3
