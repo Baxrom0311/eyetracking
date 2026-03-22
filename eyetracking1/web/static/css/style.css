@@ -643,6 +643,14 @@ body.fit-lock .aac-grid {
     align-items: flex-start;
     justify-content: space-between;
     gap: 18px;
+    position: sticky;
+    top: -24px;
+    z-index: 3;
+    margin: -24px -24px 0;
+    padding: 24px 24px 12px;
+    background: linear-gradient(180deg, rgba(25, 27, 29, 0.98) 0%, rgba(25, 27, 29, 0.92) 72%, rgba(25, 27, 29, 0) 100%);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
 }
 
 .session-close {
@@ -996,6 +1004,31 @@ body.fit-tight .tile-hint {
         justify-content: flex-start;
     }
 
+    .header-nav,
+    .header-status,
+    .composer-actions {
+        width: 100%;
+    }
+
+    .header-status {
+        flex-wrap: wrap;
+    }
+
+    .status-badge,
+    .fps-badge {
+        flex: 1 1 auto;
+        justify-content: center;
+    }
+
+    .composer-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #btn-speak {
+        grid-column: 1 / -1;
+    }
+
     .board-nav,
     .info-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1014,13 +1047,125 @@ body.fit-tight .tile-hint {
         text-align: left;
     }
 
+    .message-display {
+        overflow-y: auto;
+    }
+
     .session-window {
         width: min(96vw, 840px);
         padding: 18px;
     }
 
+    .session-window-head {
+        top: -18px;
+        margin: -18px -18px 0;
+        padding: 18px 18px 10px;
+    }
+
     .insights-grid {
         grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 560px) {
+    #header {
+        gap: 12px;
+    }
+
+    .logo {
+        width: 100%;
+    }
+
+    .logo-subtitle {
+        display: none;
+    }
+
+    .header-nav {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        width: 100%;
+        gap: 6px;
+        padding: 4px;
+    }
+
+    .nav-pill {
+        width: 100%;
+        min-height: 40px;
+        padding: 10px 8px;
+        font-size: 0.82rem;
+    }
+
+    .header-status {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        width: 100%;
+    }
+
+    .status-badge,
+    .fps-badge {
+        min-height: 40px;
+        padding-left: 12px;
+        padding-right: 12px;
+        font-size: 0.82rem;
+    }
+
+    .section-head {
+        gap: 12px;
+    }
+
+    .section-head h1 {
+        font-size: 1.1rem;
+    }
+
+    .section-head h2,
+    #board-title {
+        font-size: 1rem;
+    }
+
+    .board-nav,
+    .info-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .aac-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-rows: repeat(6, minmax(118px, auto));
+    }
+
+    body.fit-lock .aac-grid {
+        grid-template-rows: repeat(6, minmax(0, var(--aac-row-height)));
+    }
+
+    .message-display {
+        max-height: 116px;
+    }
+
+    .focus-card {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .session-window {
+        width: min(calc(100vw - 16px), 840px);
+        max-height: calc(100dvh - 16px);
+        padding: 14px;
+        gap: 10px;
+    }
+
+    .session-window-head {
+        top: -14px;
+        margin: -14px -14px 0;
+        padding: 14px 14px 10px;
+    }
+
+    .controls-bar {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .btn,
+    .session-close {
+        width: 100%;
     }
 }
 

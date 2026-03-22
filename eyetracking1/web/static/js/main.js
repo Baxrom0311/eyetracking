@@ -100,8 +100,8 @@ const healthSignals = {
 
 const AAC_PAGES = {
     core: {
-        kicker: "Communication Board",
-        title: "Core Words",
+        kicker: "Muloqot paneli",
+        title: "Asosiy so'zlar",
         subtitle: "Eng ko'p ishlatiladigan asosiy so'zlar. Bir necha tile tanlab, keyin gapirtiring.",
         note: "tez ishlatiladigan",
         tiles: [
@@ -120,8 +120,8 @@ const AAC_PAGES = {
         ],
     },
     needs: {
-        kicker: "Care Words",
-        title: "Needs and Care",
+        kicker: "Parvarish so'zlari",
+        title: "Ehtiyoj va parvarish",
         subtitle: "Parvarish, tibbiy yordam va kundalik ehtiyojlar uchun tezkor tugmalar.",
         note: "parvarish",
         tiles: [
@@ -140,8 +140,8 @@ const AAC_PAGES = {
         ],
     },
     feelings: {
-        kicker: "Emotions",
-        title: "Feelings and Responses",
+        kicker: "Hissiyotlar",
+        title: "Hissiyot va javoblar",
         subtitle: "Holat, kayfiyat va javoblarni tez ifodalash uchun qisqa so'zlar.",
         note: "holat",
         tiles: [
@@ -160,8 +160,8 @@ const AAC_PAGES = {
         ],
     },
     personal: {
-        kicker: "Personal",
-        title: "People and Personal",
+        kicker: "Shaxsiy bo'lim",
+        title: "Odamlar va shaxsiy",
         subtitle: "Oila, shaxsiy mavzular va kundalik hayotga oid tugmalar.",
         note: "shaxsiy",
         tiles: [
@@ -584,7 +584,7 @@ function updateInsightsPanel() {
     insightStressNote.textContent = `${seriousCount} jiddiy, ${surpriseCount} hayron ekspressiya va ${headAwayCount} bosh og'ishi kuzatildi.`;
 
     insightAttentionLevel.textContent = `${attentionLevel} (${attentionPercent}%)`;
-    insightAttentionNote.textContent = `So'nggi 60 soniyada tracking barqarorligi taxminan ${attentionPercent}% bo'ldi.`;
+    insightAttentionNote.textContent = `So'nggi 60 soniyada kuzatuv barqarorligi taxminan ${attentionPercent}% bo'ldi.`;
 
     insightExpressionLevel.textContent = healthSignals.lastEmotion || "—";
     insightExpressionNote.textContent = "Bu hozirgi ekspressiya signali. Klinik tashxis sifatida talqin qilinmaydi.";
@@ -719,7 +719,7 @@ function handleServerMessage(data) {
     infoState.textContent = stateMap[data.state] || data.state || "—";
 
     if (data.state === "TRACKING") {
-        setStatus("tracking", "Tracking");
+        setStatus("tracking", "Kuzatuv");
     } else if (data.state === "CALIBRATING") {
         setStatus("connected", "Kalibratsiya");
     } else {

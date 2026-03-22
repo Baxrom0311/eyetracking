@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GazeSpeak AAC Communicator</title>
-    <meta name="description" content="GazeSpeak AAC communicator — brauzer ichida eye-gaze orqali matn tuzish va gapirtirish interfeysi.">
+    <title>GazeSpeak Muloqotchi</title>
+    <meta name="description" content="GazeSpeak — brauzer ichida eye-gaze orqali matn tuzish va gapirtirish interfeysi.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
@@ -17,20 +17,20 @@
                 <span class="logo-icon">◉</span>
                 <div>
                     <span class="logo-text">GazeSpeak</span>
-                    <p class="logo-subtitle">AAC communicator prototype</p>
+                    <p class="logo-subtitle">AAC muloqot prototipi</p>
                 </div>
             </div>
         </div>
 
-        <nav class="header-nav" aria-label="Main navigation">
-            <button id="btn-board-view" class="nav-pill is-active gaze-target" data-action="show-board" data-label="Board">
-                Board
+        <nav class="header-nav" aria-label="Asosiy navigatsiya">
+            <button id="btn-board-view" class="nav-pill is-active gaze-target" data-action="show-board" data-label="Muloqot">
+                Muloqot
             </button>
-            <button id="btn-open-session" class="nav-pill gaze-target" data-action="open-session" data-label="Session">
-                Session
+            <button id="btn-open-session" class="nav-pill gaze-target" data-action="open-session" data-label="Seans">
+                Seans
             </button>
-            <button id="btn-open-insights" class="nav-pill gaze-target" data-action="open-insights" data-label="Health signals">
-                Health
+            <button id="btn-open-insights" class="nav-pill gaze-target" data-action="open-insights" data-label="Sog'liq">
+                Sog'liq
             </button>
         </nav>
 
@@ -48,7 +48,7 @@
             <section id="composer-card" class="glass-card">
                 <div class="section-head">
                     <div>
-                        <p class="eyebrow">Message Builder</p>
+                        <p class="eyebrow">Xabar tuzish</p>
                         <h1>Ko'z bilan tanlang, ovozga aylantiring</h1>
                     </div>
 
@@ -76,13 +76,13 @@
                 <div id="board-main">
                     <div class="board-head">
                         <div>
-                            <p id="board-kicker" class="eyebrow">Communication Board</p>
-                            <h2 id="board-title">Core Words</h2>
+                            <p id="board-kicker" class="eyebrow">Muloqot paneli</p>
+                            <h2 id="board-title">Asosiy so'zlar</h2>
                             <p id="board-subtitle" class="board-subtitle">Eng ko'p ishlatiladigan asosiy so'zlar.</p>
                         </div>
 
                         <div class="focus-card">
-                            <span class="focus-label">Fokus</span>
+                            <span class="focus-label">Nishon</span>
                             <span id="info-focus" class="focus-value">—</span>
                         </div>
                     </div>
@@ -99,11 +99,11 @@
         <section class="session-window">
             <div class="session-window-head">
                 <div>
-                    <p class="eyebrow">Session</p>
-                    <h2>Tracking panel</h2>
+                    <p class="eyebrow">Seans</p>
+                    <h2>Kuzatuv paneli</h2>
                 </div>
 
-                <button id="btn-close-session" class="session-close gaze-target" data-action="close-session" data-label="Sessionni yopish">
+                <button id="btn-close-session" class="session-close gaze-target" data-action="close-session" data-label="Seansni yopish">
                     Yopish
                 </button>
             </div>
@@ -164,11 +164,11 @@
         <section class="session-window insights-window">
             <div class="session-window-head">
                 <div>
-                    <p class="eyebrow">Health Signals</p>
-                    <h2>Non-diagnostic face analysis</h2>
+                    <p class="eyebrow">Sog'liq signallari</p>
+                    <h2>Tashxis bermaydigan yuz tahlili</h2>
                 </div>
 
-                <button id="btn-close-insights" class="session-close gaze-target" data-action="close-insights" data-label="Health oynani yopish">
+                <button id="btn-close-insights" class="session-close gaze-target" data-action="close-insights" data-label="Sog'liq oynasini yopish">
                     Yopish
                 </button>
             </div>
@@ -193,7 +193,7 @@
                 <article class="insight-card tone-cool">
                     <span class="insight-kicker">Diqqat barqarorligi</span>
                     <strong id="insight-attention-level" class="insight-level">—</strong>
-                    <p id="insight-attention-note" class="insight-note">Tracking namunasi yig'ilmoqda.</p>
+                    <p id="insight-attention-note" class="insight-note">Kuzatuv namunasi yig'ilmoqda.</p>
                 </article>
 
                 <article class="insight-card tone-neutral">
@@ -224,6 +224,6 @@
 
     <div id="screen-gaze-dot" class="screen-gaze-dot hidden"></div>
 
-    <script src="/static/js/main.js?v=20260321-4" type="module"></script>
+    <script src="/static/js/main.js?v=20260322-2" type="module"></script>
 </body>
 </html>
