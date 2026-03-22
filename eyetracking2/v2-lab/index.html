@@ -1,112 +1,231 @@
 <!DOCTYPE html>
 <html lang="uz">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebGazer V2 Lab</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GazeSpeak AAC Communicator</title>
+    <meta name="description" content="GazeSpeak AAC communicator — brauzer ichida WebGazer orqali matn tuzish va gapirtirish interfeysi.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-  <div class="shell">
-    <header class="topbar">
-      <div>
-        <a class="backlink" href="../">← Variantlar</a>
-        <p class="eyebrow">Version 2</p>
-        <h1>WebGazer Lab</h1>
-        <p class="lede">Guided calibration, validation score, live trail va session export bilan kuchliroq laboratoriya varianti.</p>
-      </div>
-      <div class="status-stack">
-        <span id="phase-badge" class="status-chip idle">Idle</span>
-        <span class="hint">V1 ko'rinishiga yaqin, lekin validation va export funksiyalari saqlanadi.</span>
-      </div>
+    <header id="header">
+        <div class="brand-block">
+            <div class="logo">
+                <span class="logo-icon">◉</span>
+                <div>
+                    <span class="logo-text">GazeSpeak</span>
+                    <p class="logo-subtitle">AAC communicator prototype</p>
+                </div>
+            </div>
+        </div>
+
+        <nav class="header-nav" aria-label="Main navigation">
+            <button id="btn-board-view" class="nav-pill is-active gaze-target" data-action="show-board" data-label="Board">
+                Board
+            </button>
+            <button id="btn-open-session" class="nav-pill gaze-target" data-action="open-session" data-label="Session">
+                Session
+            </button>
+            <button id="btn-open-insights" class="nav-pill gaze-target" data-action="open-insights" data-label="Health signals">
+                Health
+            </button>
+        </nav>
+
+        <div class="header-status">
+            <div id="status-badge" class="status-badge status-disconnected">
+                <span class="status-dot"></span>
+                <span id="status-text">Kamerani oching</span>
+            </div>
+            <span id="fps-display" class="fps-badge">0 FPS</span>
+        </div>
     </header>
 
-    <main class="layout">
-      <section class="stage-card">
-        <div id="stage" class="stage">
-          <canvas id="trail-canvas" class="trail-canvas"></canvas>
-          <div class="zone-grid">
-            <div class="zone zone-0" data-zone="0"><span>Yuqori chap</span></div>
-            <div class="zone zone-1" data-zone="1"><span>Yuqori o'ng</span></div>
-            <div class="zone zone-2" data-zone="2"><span>Pastki chap</span></div>
-            <div class="zone zone-3" data-zone="3"><span>Pastki o'ng</span></div>
-            <div class="zone zone-center" data-zone="4"><span>Markaz</span></div>
-          </div>
-          <div id="gaze-cursor" class="gaze-dot hidden"></div>
-          <div id="target" class="target hidden"></div>
-          <div id="message-box" class="message-box">
-            <p id="message-eyebrow" class="message-eyebrow">Holat</p>
-            <h2 id="message-title">WebGazer Lab tayyor</h2>
-            <p id="message-body">Start bosilgach kamera ruxsatini bering. Keyin calibration va validation avtomatik oqimda yuradi.</p>
-          </div>
-        </div>
-      </section>
+    <main id="main-content">
+        <section id="workspace">
+            <section id="composer-card" class="glass-card">
+                <div class="section-head">
+                    <div>
+                        <p class="eyebrow">Message Builder</p>
+                        <h1>Ko'z bilan tanlang, ovozga aylantiring</h1>
+                    </div>
 
-      <aside class="panel">
-        <section class="card">
-          <h2>Boshqaruv</h2>
-          <div class="actions">
-            <button id="btn-start" class="btn btn-primary">Start</button>
-            <button id="btn-recalibrate" class="btn btn-secondary" disabled>Recalibrate</button>
-            <button id="btn-preview" class="btn btn-secondary" disabled>Preview OFF</button>
-            <button id="btn-export" class="btn btn-secondary" disabled>Export JSON</button>
-          </div>
-        </section>
+                    <div class="composer-actions">
+                        <button id="btn-backspace" class="btn btn-ghost gaze-target" data-action="backspace" data-label="Orqaga">
+                            ⌫ Orqaga
+                        </button>
+                        <button id="btn-clear-message" class="btn btn-secondary gaze-target" data-action="clear" data-label="Tozalash">
+                            Tozalash
+                        </button>
+                        <button id="btn-speak" class="btn btn-primary gaze-target" data-action="speak" data-label="Gapirtirish">
+                            Gapirtirish
+                        </button>
+                    </div>
+                </div>
 
-        <section class="card telemetry">
-          <h2>Telemetry</h2>
-          <div class="metric-list">
-            <div class="metric"><span>Phase</span><strong id="metric-phase">Idle</strong></div>
-            <div class="metric"><span>Gaze</span><strong id="metric-gaze">—</strong></div>
-            <div class="metric"><span>Samples</span><strong id="metric-samples">0</strong></div>
-            <div class="metric"><span>Validation error</span><strong id="metric-error">—</strong></div>
-            <div class="metric"><span>ROI pass</span><strong id="metric-roi">—</strong></div>
-            <div class="metric"><span>Zona</span><strong id="metric-zone">—</strong></div>
-          </div>
-        </section>
+                <div id="message-display" class="message-display" aria-live="polite">
+                    <span class="message-placeholder">Tanlangan so'zlar shu yerda yig'iladi</span>
+                </div>
+            </section>
 
-        <section class="card">
-          <h2>Flow</h2>
-          <div class="step-list">
-            <div class="step" data-step="start"><strong>1</strong><span>Start</span></div>
-            <div class="step" data-step="calibration"><strong>2</strong><span>Calibration</span></div>
-            <div class="step" data-step="validation"><strong>3</strong><span>Validation</span></div>
-            <div class="step" data-step="tracking"><strong>4</strong><span>Tracking</span></div>
-          </div>
-        </section>
+            <section id="board-shell" class="glass-card">
+                <aside id="board-nav" class="board-nav"></aside>
 
-        <section class="card">
-          <h2>Zona Holati</h2>
-          <div class="zone-map">
-            <div class="zone-tile" data-zone-tile="0">↖ Yuqori chap</div>
-            <div class="zone-tile" data-zone-tile="1">↗ Yuqori o'ng</div>
-            <div class="zone-tile" data-zone-tile="2">↙ Pastki chap</div>
-            <div class="zone-tile" data-zone-tile="3">↘ Pastki o'ng</div>
-            <div class="zone-tile center" data-zone-tile="4">⊙ Markaz</div>
-          </div>
-        </section>
+                <div id="board-main">
+                    <div class="board-head">
+                        <div>
+                            <p id="board-kicker" class="eyebrow">Communication Board</p>
+                            <h2 id="board-title">Core Words</h2>
+                            <p id="board-subtitle" class="board-subtitle">Eng ko'p ishlatiladigan asosiy so'zlar.</p>
+                        </div>
 
-        <section class="card">
-          <h2>Validation Points</h2>
-          <div id="validation-list" class="validation-list">
-            <p class="empty">Validation hali ishlamagan.</p>
-          </div>
-        </section>
+                        <div class="focus-card">
+                            <span class="focus-label">Fokus</span>
+                            <span id="info-focus" class="focus-value">—</span>
+                        </div>
+                    </div>
 
-        <section class="card">
-          <h2>Log</h2>
-          <div id="event-log" class="event-log">
-            <p class="empty">Hali event yo'q.</p>
-          </div>
+                    <div id="aac-grid" class="aac-grid"></div>
+                </div>
+            </section>
         </section>
-      </aside>
     </main>
-  </div>
 
-  <script src="../vendor/webgazer.js"></script>
-  <script type="module" src="./app.js?v=20260321-6"></script>
+    <div id="session-modal" class="session-modal hidden" aria-hidden="true">
+        <div class="session-modal-backdrop" data-session-close></div>
+
+        <section class="session-window">
+            <div class="session-window-head">
+                <div>
+                    <p class="eyebrow">Session</p>
+                    <h2>Tracking panel</h2>
+                </div>
+
+                <button id="btn-close-session" class="session-close gaze-target" data-action="close-session" data-label="Sessionni yopish">
+                    Yopish
+                </button>
+            </div>
+
+            <div id="camera-container">
+                <video id="camera-video" autoplay playsinline muted></video>
+                <canvas id="overlay-canvas"></canvas>
+            </div>
+
+            <div id="controls" class="controls-bar">
+                <button id="btn-start-camera" class="btn btn-primary">
+                    Kamerani ochish
+                </button>
+                <button id="btn-calibrate" class="btn btn-accent" disabled>
+                    Kalibratsiya
+                </button>
+                <button id="btn-recalibrate" class="btn btn-secondary" disabled>
+                    Qayta kalibratsiya
+                </button>
+            </div>
+
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">Holat</span>
+                    <span id="info-state" class="info-value">—</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Yuz</span>
+                    <span id="info-face" class="info-value">—</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Gaze</span>
+                    <span id="info-gaze" class="info-value">—</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Kalibratsiya</span>
+                    <span id="info-calib" class="info-value">Yo'q</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Server zona</span>
+                    <span id="info-zone" class="info-value">—</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">So'zlar</span>
+                    <span id="info-words" class="info-value">0</span>
+                </div>
+                <div class="info-item info-item-wide">
+                    <span class="info-label">Kayfiyat</span>
+                    <span id="info-emotion" class="info-value">—</span>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div id="insights-modal" class="session-modal hidden" aria-hidden="true">
+        <div class="session-modal-backdrop" data-insights-close></div>
+
+        <section class="session-window insights-window">
+            <div class="session-window-head">
+                <div>
+                    <p class="eyebrow">Health Signals</p>
+                    <h2>Non-diagnostic WebGazer analysis</h2>
+                </div>
+
+                <button id="btn-close-insights" class="session-close gaze-target" data-action="close-insights" data-label="Health oynani yopish">
+                    Yopish
+                </button>
+            </div>
+
+            <div class="insights-disclaimer">
+                Bu panel tibbiy tashxis bermaydi. U faqat WebGazer tracking barqarorligi, gaze jitter va validation natijalaridan oddiy signal chiqaradi.
+            </div>
+
+            <div class="insights-grid">
+                <article class="insight-card tone-soft">
+                    <span class="insight-kicker">Charchoq signali</span>
+                    <strong id="insight-fatigue-level" class="insight-level">Past</strong>
+                    <p id="insight-fatigue-note" class="insight-note">Uzoq uzilish yoki signal yo'qotish hali kam.</p>
+                </article>
+
+                <article class="insight-card tone-warm">
+                    <span class="insight-kicker">Stress / noqulaylik</span>
+                    <strong id="insight-stress-level" class="insight-level">Past</strong>
+                    <p id="insight-stress-note" class="insight-note">Gaze jitter hali yuqori emas.</p>
+                </article>
+
+                <article class="insight-card tone-cool">
+                    <span class="insight-kicker">Diqqat barqarorligi</span>
+                    <strong id="insight-attention-level" class="insight-level">—</strong>
+                    <p id="insight-attention-note" class="insight-note">Tracking namunasi yig'ilmoqda.</p>
+                </article>
+
+                <article class="insight-card tone-neutral">
+                    <span class="insight-kicker">Joriy signal</span>
+                    <strong id="insight-expression-level" class="insight-level">—</strong>
+                    <p id="insight-expression-note" class="insight-note">WebGazer sifati va validation holati shu yerda ko'rinadi.</p>
+                </article>
+
+                <article class="insight-card tone-wide">
+                    <span class="insight-kicker">Ogohlantirish</span>
+                    <strong id="insight-summary" class="insight-level">Klinik xulosa emas</strong>
+                    <p id="insight-summary-note" class="insight-note">Bu signal faqat UI ichidagi observatsion yordamchi panel. Shifokor qarorini almashtirmaydi.</p>
+                </article>
+            </div>
+        </section>
+    </div>
+
+    <div id="calibration-overlay" class="calibration-overlay hidden">
+        <div id="calibration-points" class="calibration-points"></div>
+        <div id="calibration-target" class="calibration-target hidden"></div>
+        <div id="calib-status" class="calib-status">
+            <span id="calib-text">Kalibratsiya boshlanmoqda...</span>
+        </div>
+    </div>
+
+    <div id="banner" class="banner hidden">
+        <span id="banner-text"></span>
+    </div>
+
+    <div id="screen-gaze-dot" class="screen-gaze-dot hidden"></div>
+
+    <script src="../vendor/webgazer.js"></script>
+    <script src="./app.js?v=20260322-1" type="module"></script>
 </body>
 </html>
