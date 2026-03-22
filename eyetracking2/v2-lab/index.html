@@ -68,6 +68,35 @@
                 <div id="message-display" class="message-display" aria-live="polite">
                     <span class="message-placeholder">Tanlangan so'zlar shu yerda yig'iladi</span>
                 </div>
+
+                <div class="composer-lower">
+                    <section class="composer-module">
+                        <p class="eyebrow">Quick Phrases</p>
+                        <div id="quick-phrases" class="quick-phrases"></div>
+                    </section>
+
+                    <section class="composer-module">
+                        <p class="eyebrow">Live Summary</p>
+                        <div class="lab-summary">
+                            <article class="summary-card">
+                                <span class="summary-label">Phase</span>
+                                <strong id="summary-phase" class="summary-value">Idle</strong>
+                            </article>
+                            <article class="summary-card">
+                                <span class="summary-label">Validation</span>
+                                <strong id="summary-validation" class="summary-value">—</strong>
+                            </article>
+                            <article class="summary-card">
+                                <span class="summary-label">ROI Pass</span>
+                                <strong id="summary-roi" class="summary-value">—</strong>
+                            </article>
+                            <article class="summary-card">
+                                <span class="summary-label">Signal</span>
+                                <strong id="summary-signal" class="summary-value">Kutilmoqda</strong>
+                            </article>
+                        </div>
+                    </section>
+                </div>
             </section>
 
             <section id="board-shell" class="glass-card">
@@ -125,6 +154,15 @@
                 </button>
             </div>
 
+            <div class="session-action-row">
+                <button id="btn-toggle-preview" class="btn btn-ghost gaze-target" data-action="toggle-preview" data-label="Preview toggle">
+                    Preview OFF
+                </button>
+                <button id="btn-export-session" class="btn btn-secondary gaze-target" data-action="export" data-label="Export JSON">
+                    Export JSON
+                </button>
+            </div>
+
             <div class="info-grid">
                 <div class="info-item">
                     <span class="info-label">Holat</span>
@@ -154,6 +192,61 @@
                     <span class="info-label">Kayfiyat</span>
                     <span id="info-emotion" class="info-value">—</span>
                 </div>
+            </div>
+
+            <div class="session-extended-grid">
+                <section class="session-panel">
+                    <p class="eyebrow">Flow</p>
+                    <div class="phase-flow">
+                        <article class="phase-step is-active" data-phase-step="idle">
+                            <span class="phase-index">1</span>
+                            <div>
+                                <strong>Start</strong>
+                                <small>Kamera</small>
+                            </div>
+                        </article>
+                        <article class="phase-step" data-phase-step="calibration">
+                            <span class="phase-index">2</span>
+                            <div>
+                                <strong>Calibration</strong>
+                                <small>9 nuqta</small>
+                            </div>
+                        </article>
+                        <article class="phase-step" data-phase-step="validation">
+                            <span class="phase-index">3</span>
+                            <div>
+                                <strong>Validation</strong>
+                                <small>5 target</small>
+                            </div>
+                        </article>
+                        <article class="phase-step" data-phase-step="tracking">
+                            <span class="phase-index">4</span>
+                            <div>
+                                <strong>Tracking</strong>
+                                <small>Dwell select</small>
+                            </div>
+                        </article>
+                    </div>
+                </section>
+
+                <section class="session-panel">
+                    <div class="session-panel-head">
+                        <p class="eyebrow">Validation</p>
+                        <div class="validation-meta">
+                            <span><strong id="validation-avg">—</strong> avg</span>
+                            <span><strong id="validation-roi">—</strong> ROI</span>
+                        </div>
+                    </div>
+                    <div id="validation-list" class="validation-list"></div>
+                </section>
+
+                <section class="session-panel">
+                    <div class="session-panel-head">
+                        <p class="eyebrow">Session Log</p>
+                        <span class="panel-note">So'nggi eventlar</span>
+                    </div>
+                    <div id="event-log" class="event-log"></div>
+                </section>
             </div>
         </section>
     </div>

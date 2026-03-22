@@ -21,7 +21,10 @@ const btnCloseInsights = $("#btn-close-insights");
 const btnSpeak = $("#btn-speak");
 const btnClearMessage = $("#btn-clear-message");
 const btnBackspace = $("#btn-backspace");
+const btnTogglePreview = $("#btn-toggle-preview");
+const btnExportSession = $("#btn-export-session");
 const messageDisplay = $("#message-display");
+const quickPhrases = $("#quick-phrases");
 const boardNav = $("#board-nav");
 const boardTitle = $("#board-title");
 const boardSubtitle = $("#board-subtitle");
@@ -38,6 +41,10 @@ const infoZone = $("#info-zone");
 const infoCalib = $("#info-calib");
 const infoFocus = $("#info-focus");
 const infoWords = $("#info-words");
+const summaryPhase = $("#summary-phase");
+const summaryValidation = $("#summary-validation");
+const summaryRoi = $("#summary-roi");
+const summarySignal = $("#summary-signal");
 const calibOverlay = $("#calibration-overlay");
 const calibrationPoints = $("#calibration-points");
 const calibrationTarget = $("#calibration-target");
@@ -57,6 +64,11 @@ const insightExpressionLevel = $("#insight-expression-level");
 const insightExpressionNote = $("#insight-expression-note");
 const insightSummary = $("#insight-summary");
 const insightSummaryNote = $("#insight-summary-note");
+const validationAvg = $("#validation-avg");
+const validationRoi = $("#validation-roi");
+const validationList = $("#validation-list");
+const eventLog = $("#event-log");
+const phaseSteps = [...document.querySelectorAll("[data-phase-step]")];
 
 let currentPage = "core";
 let messageWords = [];
@@ -79,6 +91,7 @@ const VALIDATION_SAMPLE_MS = 1100;
 const ROI_RADIUS = 160;
 const SIGNAL_WINDOW_MS = 60000;
 const TRAIL_SAMPLE_MAX = 70;
+const PHASE_ORDER = ["idle", "calibration", "validation", "tracking"];
 
 const CALIBRATION_POINTS = [
     { id: "p1", x: 15, y: 15 },
@@ -114,6 +127,7 @@ const AAC_PAGES = {
         title: "Core Words",
         subtitle: "Eng ko'p ishlatiladigan asosiy so'zlar. Bir necha tile tanlab, keyin gapirtiring.",
         note: "tez ishlatiladigan",
+        phrases: ["Men suv xohlayman", "Men yordam xohlayman", "Men tayyorman", "Yana ayting iltimos"],
         tiles: [
             { label: "Men", symbol: "I", hint: "subyekt", tone: "gold" },
             { label: "Xohlayman", symbol: "+", hint: "istak", tone: "mint" },
@@ -134,6 +148,7 @@ const AAC_PAGES = {
         title: "Needs and Care",
         subtitle: "Parvarish, tibbiy yordam va kundalik ehtiyojlar uchun tezkor tugmalar.",
         note: "parvarish",
+        phrases: ["Menga suv kerak", "Og'riq bor", "Shifokor kerak", "Meni burang iltimos"],
         tiles: [
             { label: "Suv", symbol: "💧", hint: "ichimlik", tone: "sky" },
             { label: "Og'riq", symbol: "✚", hint: "og'riq bor", tone: "coral" },
@@ -154,6 +169,7 @@ const AAC_PAGES = {
         title: "Feelings and Responses",
         subtitle: "Holat, kayfiyat va javoblarni tez ifodalash uchun qisqa so'zlar.",
         note: "holat",
+        phrases: ["Men yaxshiman", "Men charchadim", "Men tushunmadim", "Iltimos yana ayting"],
         tiles: [
             { label: "Yaxshi", symbol: "☺", hint: "ijobiy", tone: "mint" },
             { label: "Yomon", symbol: "☹", hint: "salbiy", tone: "coral" },
@@ -174,6 +190,7 @@ const AAC_PAGES = {
         title: "People and Personal",
         subtitle: "Oila, shaxsiy mavzular va kundalik hayotga oid tugmalar.",
         note: "shaxsiy",
+        phrases: ["Onamni chaqiring", "Oilam bilan gaplashmoqchiman", "Telefon kerak", "Meni uyga olib boring"],
         tiles: [
             { label: "Ona", symbol: "M", hint: "oila", tone: "rose" },
             { label: "Ota", symbol: "D", hint: "oila", tone: "sand" },
@@ -227,6 +244,8 @@ function addEvent(message) {
     });
     trackingState.events.unshift({ stamp, message: String(message) });
     trackingState.events = trackingState.events.slice(0, 24);
+    renderEventLog();
+    renderLabSummary();
 }
 
 function renderValidation() {
@@ -250,6 +269,122 @@ function renderValidation() {
         ? "—"
         : `${Math.round(trackingState.validationRoiRate * 100)}%`;
     infoEmotion.textContent = `${Math.round(trackingState.validationAverageError)} px • ROI ${roiPercent}`;
+}
+
+function getPhaseLabel(phase) {
+    return {
+        idle: "Idle",
+        calibration: "Calibration",
+        validation: "Validation",
+        tracking: "Tracking",
+    }[phase] || phase;
+}
+
+function getSignalLabel() {
+    if (!trackingState.started) return "Offline";
+    if (trackingState.phase === "validation") return "Tekshirilmoqda";
+    if (trackingState.phase === "calibration") return "Kalibratsiya";
+    if (!trackingState.calibrated) return "Tayyor emas";
+    if (trackingState.validationAverageError == null) return "Kutilmoqda";
+    if (trackingState.validationAverageError <= 90) return "Juda yaxshi";
+    if (trackingState.validationAverageError <= ROI_RADIUS) return "Barqaror";
+    return "Nozik sozlash";
+}
+
+function renderLabSummary() {
+    summaryPhase.textContent = getPhaseLabel(trackingState.phase);
+    summaryValidation.textContent = trackingState.validationAverageError == null
+        ? trackingState.phase === "validation"
+            ? `${trackingState.validationResults.length}/${VALIDATION_POINTS.length}`
+            : "—"
+        : `${Math.round(trackingState.validationAverageError)} px`;
+    summaryRoi.textContent = trackingState.validationRoiRate == null
+        ? "—"
+        : `${Math.round(trackingState.validationRoiRate * 100)}%`;
+    summarySignal.textContent = getSignalLabel();
+}
+
+function renderPhaseFlow() {
+    const activeIndex = PHASE_ORDER.indexOf(trackingState.phase);
+    for (const step of phaseSteps) {
+        const stepIndex = PHASE_ORDER.indexOf(step.dataset.phaseStep);
+        const isActive = stepIndex === activeIndex;
+        const isDone = activeIndex > stepIndex && activeIndex !== -1;
+        step.classList.toggle("is-active", isActive);
+        step.classList.toggle("is-done", isDone);
+    }
+}
+
+function renderValidationList() {
+    validationAvg.textContent = trackingState.validationAverageError == null
+        ? "—"
+        : `${Math.round(trackingState.validationAverageError)} px`;
+    validationRoi.textContent = trackingState.validationRoiRate == null
+        ? "—"
+        : `${Math.round(trackingState.validationRoiRate * 100)}%`;
+
+    if (!trackingState.validationResults.length) {
+        validationList.innerHTML = '<p class="session-empty">Validation hali ishlamagan.</p>';
+        return;
+    }
+
+    validationList.innerHTML = trackingState.validationResults
+        .map((result) => {
+            const good = Number.isFinite(result.error) && result.error <= ROI_RADIUS;
+            const stateClass = good ? "is-good" : "is-warn";
+            const errorLabel = Number.isFinite(result.error) ? `${Math.round(result.error)} px` : "Signal yo'q";
+            return `
+                <article class="validation-item ${stateClass}">
+                    <strong>${escapeHtml(result.label)}</strong>
+                    <small>${errorLabel} • ${result.samples} sample • ${good ? "ROI ichida" : "ROI tashqarisida"}</small>
+                </article>
+            `;
+        })
+        .join("");
+}
+
+function renderEventLog() {
+    if (!trackingState.events.length) {
+        eventLog.innerHTML = '<p class="session-empty">Hali event yo\'q.</p>';
+        return;
+    }
+
+    eventLog.innerHTML = trackingState.events
+        .map((entry) => `
+            <article class="event-item">
+                <strong>${escapeHtml(entry.message)}</strong>
+                <time>${escapeHtml(entry.stamp)}</time>
+            </article>
+        `)
+        .join("");
+}
+
+function renderPreviewToggle() {
+    btnTogglePreview.textContent = trackingState.previewVisible ? "Preview OFF" : "Preview ON";
+}
+
+function renderQuickPhrases() {
+    const page = AAC_PAGES[currentPage];
+    quickPhrases.innerHTML = page.phrases
+        .map((phrase) => `
+            <button
+                class="phrase-chip gaze-target"
+                data-action="phrase"
+                data-phrase="${escapeHtml(phrase)}"
+                data-label="${escapeHtml(phrase)}"
+            >
+                ${escapeHtml(phrase)}
+            </button>
+        `)
+        .join("");
+}
+
+function renderSessionPanels() {
+    renderLabSummary();
+    renderPhaseFlow();
+    renderValidationList();
+    renderEventLog();
+    renderPreviewToggle();
 }
 
 function escapeHtml(value) {
@@ -406,6 +541,22 @@ function appendWord(word) {
     updateMessageDisplay();
 }
 
+function appendPhrase(phrase) {
+    const words = phrase
+        .split(/\s+/)
+        .map((word) => word.trim())
+        .filter(Boolean);
+
+    for (const word of words) {
+        if (messageWords.length >= MAX_MESSAGE_WORDS) {
+            break;
+        }
+        messageWords.push(word);
+    }
+
+    updateMessageDisplay();
+}
+
 function clearMessage() {
     messageWords = [];
     updateMessageDisplay();
@@ -436,6 +587,7 @@ function speakMessage() {
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
     showBanner("Matn gapirtirildi", 2);
+    addEvent(`Gapirtirildi: ${text}`);
 }
 
 function renderBoardNav() {
@@ -461,6 +613,7 @@ function renderBoardGrid() {
     boardKicker.textContent = page.kicker;
     boardTitle.textContent = page.title;
     boardSubtitle.textContent = page.subtitle;
+    renderQuickPhrases();
 
     aacGrid.innerHTML = page.tiles
         .map((tile) => `
@@ -508,8 +661,12 @@ function performTargetAction(target, source = "manual") {
 
     if (action === "word") {
         appendWord(target.dataset.word || target.dataset.label || "");
+    } else if (action === "phrase") {
+        appendPhrase(target.dataset.phrase || target.dataset.label || "");
+        addEvent(`Quick phrase: ${target.dataset.label || ""}`);
     } else if (action === "page") {
         setPage(target.dataset.page);
+        addEvent(`Page: ${target.dataset.page}`);
     } else if (action === "open-session") {
         openSessionModal();
     } else if (action === "open-insights") {
@@ -526,6 +683,10 @@ function performTargetAction(target, source = "manual") {
         backspaceMessage();
     } else if (action === "speak") {
         speakMessage();
+    } else if (action === "toggle-preview") {
+        togglePreview();
+    } else if (action === "export") {
+        exportSession();
     }
 
     if (source === "gaze") {
@@ -754,6 +915,7 @@ async function runValidation() {
         }
         trackingState.validationResults.push(result);
         renderValidation();
+        renderSessionPanels();
     }
 
     const valid = trackingState.validationResults.filter((entry) => Number.isFinite(entry.error));
@@ -776,6 +938,7 @@ async function runValidation() {
     addEvent(`Validation tugadi: avg ${trackingState.validationAverageError == null ? "—" : Math.round(trackingState.validationAverageError)} px`);
     showBanner("Kalibratsiya va validation tugadi", 3);
     renderValidation();
+    renderSessionPanels();
     updateInsightsPanel();
 }
 
@@ -804,6 +967,7 @@ function startCalibration() {
     setStatus("connected", "Kalibratsiya");
     addEvent("Calibration boshlandi");
     showBanner("Har nuqtaga 4 marta bosing", 2.6);
+    renderSessionPanels();
 }
 
 function pruneEvents(array, now, windowMs = SIGNAL_WINDOW_MS) {
@@ -954,6 +1118,17 @@ function updatePreviewVisibility() {
     });
 }
 
+function togglePreview() {
+    if (!trackingState.started) {
+        showBanner("Avval kamerani oching", 2);
+        return;
+    }
+    trackingState.previewVisible = !trackingState.previewVisible;
+    updatePreviewVisibility();
+    renderPreviewToggle();
+    addEvent(`Preview ${trackingState.previewVisible ? "ON" : "OFF"}`);
+}
+
 function mountPreviewElements() {
     const ids = ["webgazerVideoFeed", "webgazerFaceOverlay", "webgazerFaceFeedbackBox"];
     for (const id of ids) {
@@ -1051,6 +1226,7 @@ async function startTracker() {
         infoCalib.textContent = "Yo'q";
         syncZoneVisuals();
         renderValidation();
+        renderSessionPanels();
 
         btnStartCam.textContent = "Kamera tayyor";
         btnStartCam.disabled = true;
@@ -1106,6 +1282,7 @@ function refreshRuntimeState() {
 
     fpsDisplay.textContent = `${trackingState.frameCounter} FPS`;
     trackingState.frameCounter = 0;
+    renderLabSummary();
 }
 
 function bind() {
@@ -1115,9 +1292,6 @@ function bind() {
     btnStartCam.addEventListener("click", startTracker);
     btnCalibrate.addEventListener("click", startCalibration);
     btnRecalibrate.addEventListener("click", startCalibration);
-    btnBackspace.addEventListener("click", backspaceMessage);
-    btnClearMessage.addEventListener("click", clearMessage);
-    btnSpeak.addEventListener("click", speakMessage);
 
     document.addEventListener("click", (event) => {
         const target = event.target.closest(".gaze-target");
@@ -1137,6 +1311,7 @@ function bind() {
             trackingState.phase = trackingState.calibrated ? "tracking" : "idle";
             setStatus(trackingState.calibrated ? "tracking" : "connected", trackingState.calibrated ? "Tracking" : "Ulangan");
             renderValidation();
+            renderSessionPanels();
         }
     });
 
@@ -1191,6 +1366,7 @@ renderValidation();
 updateInsightsPanel();
 renderBoardNav();
 renderBoardGrid();
+renderSessionPanels();
 scheduleLayoutFit();
 window.addEventListener("load", syncLayoutFit);
 document.fonts?.ready?.then(() => {
