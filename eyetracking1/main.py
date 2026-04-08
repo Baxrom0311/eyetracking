@@ -34,6 +34,7 @@ from settings import (
     CAMERA_HEIGHT,
     CAMERA_READ_FAIL_LIMIT,
     CAMERA_WIDTH,
+    CURSOR_ENABLED_DEFAULT,
     DEBUG_MODE,
     LOG_FILE,
     LOG_BACKUP_COUNT,
@@ -62,7 +63,7 @@ logger = logging.getLogger(__name__)
 
 def _draw_shortcuts(frame, cursor_enabled: bool, debug: bool) -> None:
     h = frame.shape[0]
-    status = "Cursor ON" if cursor_enabled else "Cursor OFF"
+    status = "Pointer ON" if cursor_enabled else "AAC ON"
     dbg = "Debug ON" if debug else "Debug OFF"
     cv2.putText(
         frame,
@@ -115,14 +116,15 @@ def main() -> int:
         mapper = GazeMapper()
         calib_mgr = CalibrationManager(mapper.screen_w, mapper.screen_h)
         mouse = MouseController()
-        zones = ZoneAnalyzer()
+        zones = ZoneAnalyzer(mapper.screen_w, mapper.screen_h)
         overlay = OverlayUI()
+        overlay.set_screen_size(mapper.screen_w, mapper.screen_h)
         state_m = StateMachine()
         tts = TTSEngine()
         notifier = Notifier(tts)
         state_m.transition(State.INIT)
 
-        saved_model = CalibrationManager.load_saved()
+        saved_model = CalibrationManager.load_saved(mapper.screen_w, mapper.screen_h)
         has_valid_calibration = saved_model is not None and mapper.set_calibration(saved_model)
 
         camera.open()
@@ -138,7 +140,7 @@ def main() -> int:
             overlay.show_banner("Kalibrasiya boshlandi", 1.5)
 
         debug = DEBUG_MODE
-        cursor_enabled = True
+        cursor_enabled = CURSOR_ENABLED_DEFAULT
         gaze_screen = None
         zone_idx = -1
         zone_progress = 0.0
@@ -208,43 +210,53 @@ def main() -> int:
                 if state_m.is_tracking and gaze_ready:
                     sx, sy = mapper.map(face_data.gaze_norm)
                     gaze_screen = (sx, sy)
-
-                    if cursor_enabled and mapper.has_moved(sx, sy):
-                        mouse.move(sx, sy)
-
-                    dwell_progress = (
-                        mouse.update_dwell(sx, sy) if cursor_enabled else 0.0
-                    )
-
                     blink = tracker.blink_detector
-                    if cursor_enabled and blink.double_blink:
-                        mouse.blink_click(double=True)
-                        mouse.suppress_dwell(sx, sy)
-                        dwell_progress = 0.0
-                        overlay.show_banner("Double click", 1.0)
-                    elif cursor_enabled and blink.single_blink:
-                        mouse.blink_click(double=False)
-                        mouse.suppress_dwell(sx, sy)
-                        dwell_progress = 0.0
-                    elif cursor_enabled and blink.long_blink:
-                        mouse.right_click()
-                        mouse.suppress_dwell(sx, sy)
-                        dwell_progress = 0.0
-                        overlay.show_banner("Right click", 1.0)
 
-                    zone_result = zones.update(sx, sy)
-                    zone_idx, zone_progress = zones.get_progress(sx, sy)
+                    if cursor_enabled:
+                        zones.reset_zone()
+                        zone_idx = -1
+                        zone_progress = 0.0
+                        if state_m.state in (State.DWELL_ZONE, State.ZONE_FIRED):
+                            state_m.transition(State.TRACKING)
 
-                    if zone_result:
-                        state_m.transition(State.ZONE_FIRED)
-                        zone_fired_until = time.time() + ZONE_FIRED_BANNER_SEC
-                        notifier.notify(zone_result)
-                        overlay.show_banner(zone_result["message"], 4.0)
-                    elif zone_idx >= 0 and zone_progress > 0.0:
-                        if state_m.state == State.TRACKING:
-                            state_m.transition(State.DWELL_ZONE)
-                    elif state_m.state == State.DWELL_ZONE:
-                        state_m.transition(State.TRACKING)
+                        if mapper.has_moved(sx, sy):
+                            mouse.move(sx, sy)
+
+                        dwell_progress = mouse.update_dwell(sx, sy)
+
+                        action_fired = False
+                        if blink.double_blink:
+                            action_fired = mouse.blink_click(double=True)
+                            if action_fired:
+                                overlay.show_banner("Double click", 1.0)
+                        elif blink.single_blink:
+                            action_fired = mouse.blink_click(double=False)
+                        elif blink.long_blink:
+                            action_fired = mouse.right_click()
+                            if action_fired:
+                                overlay.show_banner("Right click", 1.0)
+
+                        if action_fired:
+                            mouse.suppress_dwell(sx, sy)
+                            dwell_progress = 0.0
+
+                    else:
+                        dwell_progress = 0.0
+                        mouse.reset_dwell()
+
+                        zone_result = zones.update(sx, sy)
+                        zone_idx, zone_progress = zones.get_progress(sx, sy)
+
+                        if zone_result:
+                            state_m.transition(State.ZONE_FIRED)
+                            zone_fired_until = time.time() + ZONE_FIRED_BANNER_SEC
+                            notifier.notify(zone_result)
+                            overlay.show_banner(zone_result["message"], 4.0)
+                        elif zone_idx >= 0 and zone_progress > 0.0:
+                            if state_m.state == State.TRACKING:
+                                state_m.transition(State.DWELL_ZONE)
+                        elif state_m.state == State.DWELL_ZONE:
+                            state_m.transition(State.TRACKING)
                 else:
                     gaze_screen = None
                     zone_idx = -1
@@ -262,6 +274,7 @@ def main() -> int:
                 fps=camera.fps,
                 brightness=camera.brightness,
                 dwell_progress=dwell_progress,
+                show_zones=not cursor_enabled,
             )
             _draw_shortcuts(frame, cursor_enabled, debug)
             cv2.imshow(OVERLAY_WINDOW_NAME, frame)
@@ -287,9 +300,16 @@ def main() -> int:
                 logger.info("Debug overlay: %s", debug)
             if key == ord("m"):
                 cursor_enabled = not cursor_enabled
-                logger.info("Cursor control: %s", cursor_enabled)
+                mouse.reset_dwell()
+                zones.reset_zone()
+                zone_idx = -1
+                zone_progress = 0.0
+                dwell_progress = 0.0
+                if state_m.state in (State.DWELL_ZONE, State.ZONE_FIRED):
+                    state_m.transition(State.TRACKING)
+                logger.info("Pointer mode: %s", cursor_enabled)
                 overlay.show_banner(
-                    f"Cursor {'ON' if cursor_enabled else 'OFF'}",
+                    "Pointer ON" if cursor_enabled else "AAC mode",
                     1.0,
                 )
             if key == ord("r"):

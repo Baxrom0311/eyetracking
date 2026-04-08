@@ -7,6 +7,14 @@ def _env_bool(name: str, default: bool) -> bool:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
+
+def _env_str(name: str, default: str) -> str:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = raw.strip()
+    return value or default
+
 # ── Kamera ──────────────────────────────────────────────
 CAMERA_INDEX        = 0        # 0 = birinchi (laptop) kamera
 CAMERA_WIDTH        = 640
@@ -51,10 +59,12 @@ HEAD_AWAY_DELAY_SEC  = 0.6    # bosh chetga ketganda qisqa flickerlarni filtrlas
 HEAD_OFFSET_SMOOTHING_ALPHA = 0.25
 
 # ── Head Pose → Gaze Blend (gibrid model) ──────────────
-HEAD_MOVEMENT_WEIGHT = 1.5    # Bosh harakati gaze ga qancha ta'sir qiladi
-HEAD_YAW_SCALE       = 0.6    # Yaw (gorizontal burilish) kuchaytirgich
-HEAD_PITCH_SCALE     = 0.8    # Pitch (vertikal burilish) kuchaytirgich
-HEAD_POSE_SMOOTHING  = 0.3    # Head pose uchun alohida smoothing (0=sekin, 1=xom)
+HEAD_MOVEMENT_WEIGHT = 0.45   # Bosh harakati gaze ga ehtiyotkorroq ta'sir qiladi
+HEAD_YAW_SCALE       = 0.40   # Yaw (gorizontal burilish) kuchaytirgich
+HEAD_PITCH_SCALE     = 0.48   # Pitch (vertikal burilish) kuchaytirgich
+HEAD_POSE_SMOOTHING  = 0.25   # Head pose uchun alohida smoothing (0=sekin, 1=xom)
+HEAD_NEUTRAL_ADAPT_ALPHA = 0.04
+HEAD_POSE_MAX_OFFSET = 0.18
 
 # ── Gaze / Cursor ───────────────────────────────────────
 SMOOTHING_ALPHA      = 0.35   # Exponential smoothing (kattaroq = tezroq)
@@ -78,14 +88,19 @@ CALIB_MIN_GAZE_SPAN_X = 0.06  # Ekstremal hollarni ham qabul qilish uchun kichra
 CALIB_MIN_GAZE_SPAN_Y = 0.04
 CALIB_OUTLIER_Z      = 2.5    # per-point modified z-score threshold
 CALIB_MIN_FILTERED_SAMPLES = 8
+CALIB_MAX_INVALID_SEC = 0.8
+CALIB_MIN_POINTS_REQUIRED = 7
+CALIB_MAX_RMSE_RATIO = 0.10
+CALIB_MAX_POINT_MEAN_ERR_RATIO = 0.14
 
 # ── Dwell click ─────────────────────────────────────────
-DWELL_CLICK_MS       = 2000   # 2 soniya = click (cursor hissiz tursa)
-DWELL_RADIUS_PX      = 40     # Bu radiusdan chiqsa timer qayta boshlanadi
+DWELL_CLICK_MS       = 2600   # Faqat yetarlicha barqaror qaralganda click
+DWELL_RADIUS_PX      = 32     # Radius kichikroq — accidental dwell kamroq
 DWELL_SUPPRESS_AFTER_ACTION_SEC = 2.5
+CURSOR_ENABLED_DEFAULT = _env_bool("GAZESPEAK_POINTER_ENABLED", False)
 
 # ── Zona tahlili (10s dwell → xabar) ───────────────────
-ZONE_DWELL_SEC       = 10     # Bir zonada shuncha sec = trigger
+ZONE_DWELL_SEC       = 6      # AAC signal uchun tezroq, lekin tasodifiy emas
 ZONE_COOLDOWN_SEC    = 30     # Trigger keyin shuncha sec kutiladi (spam oldini olish)
 
 # Ekran 5 zonaga bo'linadi (nisbiy, 0.0-1.0)
@@ -105,9 +120,13 @@ TTS_LANGUAGE         = "uz"   # uz, ru, en
 TTS_ENABLED          = _env_bool("GAZESPEAK_TTS_ENABLED", True)
 
 # ── Android WebSocket ───────────────────────────────────
-ANDROID_WS_HOST      = "0.0.0.0"
+ANDROID_WS_HOST      = _env_str("GAZESPEAK_ANDROID_WS_HOST", "127.0.0.1")
 ANDROID_WS_PORT      = 8765
 ANDROID_ENABLED      = _env_bool("GAZESPEAK_ANDROID_ENABLED", True)
+
+# ── Web AAC Performance ─────────────────────────────────
+WEB_ENABLE_EMOTION   = _env_bool("GAZESPEAK_WEB_ENABLE_EMOTION", False)
+WEB_ENABLE_ZONE_ANALYSIS = _env_bool("GAZESPEAK_WEB_ENABLE_ZONE_ANALYSIS", False)
 
 # ── Overlay UI ──────────────────────────────────────────
 OVERLAY_WINDOW_NAME  = "GazeSpeak"

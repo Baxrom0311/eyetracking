@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260409-1">
 </head>
 <body>
     <header id="header">
@@ -28,9 +28,6 @@
             </button>
             <button id="btn-open-session" class="nav-pill gaze-target" data-action="open-session" data-label="Seans">
                 Seans
-            </button>
-            <button id="btn-open-insights" class="nav-pill gaze-target" data-action="open-insights" data-label="Sog'liq">
-                Sog'liq
             </button>
         </nav>
 
@@ -68,6 +65,52 @@
                 <div id="message-display" class="message-display" aria-live="polite">
                     <span class="message-placeholder">Tanlangan so'zlar shu yerda yig'iladi</span>
                 </div>
+
+                <div class="composer-utilities">
+                    <section class="utility-panel">
+                        <div class="utility-head">
+                            <div>
+                                <p class="utility-kicker">Word Prediction</p>
+                                <p class="utility-note">Kontekstga qarab keyingi so'z yoki qisqa ibora.</p>
+                            </div>
+                            <span id="mode-badge" class="utility-badge">Asosiy panel</span>
+                        </div>
+                        <div id="prediction-strip" class="prediction-strip"></div>
+                    </section>
+
+                    <section class="utility-panel">
+                        <div class="utility-head">
+                            <div>
+                                <p class="utility-kicker">Yes / No Fast Mode</p>
+                                <p class="utility-note">Eng tez javoblar doim ko'rinib turadi.</p>
+                            </div>
+                            <button id="btn-toggle-mode" class="btn btn-secondary mode-toggle gaze-target" data-action="toggle-mode" data-label="Parvarish paneli">
+                                Parvarish paneli
+                            </button>
+                        </div>
+                        <div id="quick-strip" class="quick-strip"></div>
+                    </section>
+
+                    <section class="utility-panel utility-panel-emergency">
+                        <div class="utility-head">
+                            <div>
+                                <p class="utility-kicker">Emergency Row</p>
+                                <p class="utility-note">Bir qarashda favqulodda signal yuborish.</p>
+                            </div>
+                        </div>
+                        <div id="emergency-strip" class="quick-strip emergency-strip"></div>
+                    </section>
+
+                    <section class="utility-panel">
+                        <div class="utility-head">
+                            <div>
+                                <p class="utility-kicker">Phrase Bank</p>
+                                <p id="phrase-caption" class="utility-note">Ko'p ishlatiladigan tayyor gaplar.</p>
+                            </div>
+                        </div>
+                        <div id="phrase-bank" class="phrase-bank"></div>
+                    </section>
+                </div>
             </section>
 
             <section id="board-shell" class="glass-card">
@@ -84,6 +127,7 @@
                         <div class="focus-card">
                             <span class="focus-label">Nishon</span>
                             <span id="info-focus" class="focus-value">—</span>
+                            <span id="mode-summary" class="focus-meta">Asosiy panel</span>
                         </div>
                     </div>
 
@@ -151,62 +195,9 @@
                     <span id="info-words" class="info-value">0</span>
                 </div>
                 <div class="info-item info-item-wide">
-                    <span class="info-label">Kayfiyat</span>
+                    <span class="info-label">Yuz signali</span>
                     <span id="info-emotion" class="info-value">—</span>
                 </div>
-            </div>
-        </section>
-    </div>
-
-    <div id="insights-modal" class="session-modal hidden" aria-hidden="true">
-        <div class="session-modal-backdrop" data-insights-close></div>
-
-        <section class="session-window insights-window">
-            <div class="session-window-head">
-                <div>
-                    <p class="eyebrow">Sog'liq signallari</p>
-                    <h2>Tashxis bermaydigan yuz tahlili</h2>
-                </div>
-
-                <button id="btn-close-insights" class="session-close gaze-target" data-action="close-insights" data-label="Sog'liq oynasini yopish">
-                    Yopish
-                </button>
-            </div>
-
-            <div class="insights-disclaimer">
-                Bu panel tibbiy tashxis bermaydi. U faqat yuz ifodasi, ko'z yumish va bosh holatidan oddiy signal chiqaradi. Yuqori signal chiqsa ham bu kasallik degani emas.
-            </div>
-
-            <div class="insights-grid">
-                <article class="insight-card tone-soft">
-                    <span class="insight-kicker">Charchoq signali</span>
-                    <strong id="insight-fatigue-level" class="insight-level">Past</strong>
-                    <p id="insight-fatigue-note" class="insight-note">Blink va uzun blink hali kam kuzatildi.</p>
-                </article>
-
-                <article class="insight-card tone-warm">
-                    <span class="insight-kicker">Stress / noqulaylik</span>
-                    <strong id="insight-stress-level" class="insight-level">Past</strong>
-                    <p id="insight-stress-note" class="insight-note">Jiddiy yoki hayron ekspressiya kuchli emas.</p>
-                </article>
-
-                <article class="insight-card tone-cool">
-                    <span class="insight-kicker">Diqqat barqarorligi</span>
-                    <strong id="insight-attention-level" class="insight-level">—</strong>
-                    <p id="insight-attention-note" class="insight-note">Kuzatuv namunasi yig'ilmoqda.</p>
-                </article>
-
-                <article class="insight-card tone-neutral">
-                    <span class="insight-kicker">Joriy ekspressiya</span>
-                    <strong id="insight-expression-level" class="insight-level">—</strong>
-                    <p id="insight-expression-note" class="insight-note">So'nggi yuz ifodasi shu yerda ko'rinadi.</p>
-                </article>
-
-                <article class="insight-card tone-wide">
-                    <span class="insight-kicker">Ogohlantirish</span>
-                    <strong id="insight-summary" class="insight-level">Klinik xulosa emas</strong>
-                    <p id="insight-summary-note" class="insight-note">Agar yuqori signal bir necha daqiqa davom etsa, bu faqat qo'shimcha kuzatuv sababi bo'lishi mumkin. Shifokor qarorini almashtirmaydi.</p>
-                </article>
             </div>
         </section>
     </div>
@@ -224,6 +215,6 @@
 
     <div id="screen-gaze-dot" class="screen-gaze-dot hidden"></div>
 
-    <script src="/static/js/main.js?v=20260322-2" type="module"></script>
+    <script src="/static/js/main.js?v=20260409-2" type="module"></script>
 </body>
 </html>

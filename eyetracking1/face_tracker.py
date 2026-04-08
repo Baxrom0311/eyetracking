@@ -15,7 +15,7 @@ from settings import (
     GAZE_X_SENSITIVITY, GAZE_Y_SENSITIVITY,
     DOUBLE_BLINK_MS, LONG_BLINK_MS,
     HEAD_MOVEMENT_WEIGHT, HEAD_YAW_SCALE, HEAD_PITCH_SCALE,
-    HEAD_POSE_SMOOTHING,
+    HEAD_NEUTRAL_ADAPT_ALPHA, HEAD_POSE_MAX_OFFSET, HEAD_POSE_SMOOTHING,
 )
 import time
 
@@ -106,7 +106,7 @@ class FaceTracker:
     MediaPipe Face Landmarker orqali yuz va iris kuzatadi.
     """
 
-    def __init__(self):
+    def __init__(self, enable_blendshapes: bool = True):
         if not os.path.exists(FACE_LANDMARKER_MODEL):
             logger.info("Face Landmarker modeli topilmadi. Yuklab olinmoqda...")
             os.makedirs(os.path.dirname(FACE_LANDMARKER_MODEL), exist_ok=True)
@@ -131,15 +131,18 @@ class FaceTracker:
             min_face_detection_confidence=MP_MIN_DETECT_CONF,
             min_face_presence_confidence=MP_MIN_DETECT_CONF,
             min_tracking_confidence=MP_MIN_TRACK_CONF,
-            output_face_blendshapes=True,
+            output_face_blendshapes=enable_blendshapes,
         )
         self._face_landmarker = FaceLandmarker.create_from_options(options)
+        self._enable_blendshapes = enable_blendshapes
         self._last_timestamp_ms = 0
         self._head_offset_smoothed = 0.0
         self._head_away_latched    = False
-        self._prev_gaze            = (0.5, 0.5)
         self._smoothed_yaw         = 0.0
         self._smoothed_pitch       = 0.0
+        self._neutral_yaw          = 0.0
+        self._neutral_pitch        = 0.0
+        self._neutral_ready        = False
         self.blink_detector        = BlinkDetector()
         logger.info("FaceTracker: MediaPipe Face Landmarker yuklandi.")
 
@@ -193,8 +196,13 @@ class FaceTracker:
             HEAD_POSE_SMOOTHING * raw_pitch
             + (1 - HEAD_POSE_SMOOTHING) * self._smoothed_pitch
         )
-        data.head_yaw = self._smoothed_yaw
-        data.head_pitch = self._smoothed_pitch
+        self._update_head_neutral(
+            self._smoothed_yaw,
+            self._smoothed_pitch,
+            can_adapt=not data.head_away,
+        )
+        data.head_yaw = float(np.clip(self._smoothed_yaw - self._neutral_yaw, -1.0, 1.0))
+        data.head_pitch = float(np.clip(self._smoothed_pitch - self._neutral_pitch, -1.0, 1.0))
 
         # ── Iris-ga asoslangan Gaze ──────────────────────
         gaze_candidates = []
@@ -225,9 +233,15 @@ class FaceTracker:
             iris_gx, iris_gy = self._apply_gaze_sensitivity(iris_gx, iris_gy)
 
             # ── Gibrid: Iris + Head Pose birlashtirish ───
-            # Head yaw/pitch ni gaze ga qo'shamiz (og'irlik bilan)
-            head_gx = 0.5 - data.head_yaw * HEAD_YAW_SCALE
-            head_gy = 0.5 + data.head_pitch * HEAD_PITCH_SCALE
+            # Head yaw/pitch ni neutral baseline ga nisbatan va cheklangan og'irlik bilan qo'shamiz.
+            head_x_offset = float(
+                np.clip(data.head_yaw * HEAD_YAW_SCALE, -HEAD_POSE_MAX_OFFSET, HEAD_POSE_MAX_OFFSET)
+            )
+            head_y_offset = float(
+                np.clip(data.head_pitch * HEAD_PITCH_SCALE, -HEAD_POSE_MAX_OFFSET, HEAD_POSE_MAX_OFFSET)
+            )
+            head_gx = 0.5 - head_x_offset
+            head_gy = 0.5 + head_y_offset
             w = HEAD_MOVEMENT_WEIGHT
             gx = (iris_gx + head_gx * w) / (1.0 + w)
             gy = (iris_gy + head_gy * w) / (1.0 + w)
@@ -250,7 +264,7 @@ class FaceTracker:
         data.right_blink = data.right_ear < BLINK_EAR_THRESHOLD
 
         # ── Emotion (Kayfiyat) ────────────────────────────
-        if hasattr(results, 'face_blendshapes') and results.face_blendshapes:
+        if self._enable_blendshapes and hasattr(results, 'face_blendshapes') and results.face_blendshapes:
             blends = {b.category_name: b.score for b in results.face_blendshapes[0]}
             smile = max(blends.get("mouthSmileLeft", 0.0), blends.get("mouthSmileRight", 0.0))
             frown = max(blends.get("browDownLeft", 0.0), blends.get("browDownRight", 0.0))
@@ -371,6 +385,25 @@ class FaceTracker:
         # Pitch: burunning vertikal og'ishi ko'z orasidagi masofaga nisbatan
         pitch = float((nose[1] - eye_center[1]) / eye_dist)
         return yaw, pitch
+
+    def _update_head_neutral(self, yaw: float, pitch: float, can_adapt: bool) -> None:
+        if not can_adapt:
+            return
+        if not self._neutral_ready:
+            self._neutral_yaw = yaw
+            self._neutral_pitch = pitch
+            self._neutral_ready = True
+            return
+
+        if (
+            abs(yaw - self._neutral_yaw) > HEAD_POSE_MAX_OFFSET * 2.0
+            or abs(pitch - self._neutral_pitch) > HEAD_POSE_MAX_OFFSET * 2.0
+        ):
+            return
+
+        alpha = HEAD_NEUTRAL_ADAPT_ALPHA
+        self._neutral_yaw = alpha * yaw + (1 - alpha) * self._neutral_yaw
+        self._neutral_pitch = alpha * pitch + (1 - alpha) * self._neutral_pitch
 
     def draw_debug(self, frame: np.ndarray, data: FaceData) -> np.ndarray:
         """

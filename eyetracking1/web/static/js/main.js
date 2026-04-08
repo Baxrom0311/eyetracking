@@ -14,13 +14,18 @@ const btnCalibrate = $("#btn-calibrate");
 const btnRecalibrate = $("#btn-recalibrate");
 const btnBoardView = $("#btn-board-view");
 const btnOpenSession = $("#btn-open-session");
-const btnOpenInsights = $("#btn-open-insights");
 const btnCloseSession = $("#btn-close-session");
-const btnCloseInsights = $("#btn-close-insights");
 const btnSpeak = $("#btn-speak");
 const btnClearMessage = $("#btn-clear-message");
 const btnBackspace = $("#btn-backspace");
+const btnToggleMode = $("#btn-toggle-mode");
 const messageDisplay = $("#message-display");
+const predictionStrip = $("#prediction-strip");
+const quickStrip = $("#quick-strip");
+const emergencyStrip = $("#emergency-strip");
+const phraseBank = $("#phrase-bank");
+const phraseCaption = $("#phrase-caption");
+const modeBadge = $("#mode-badge");
 const boardNav = $("#board-nav");
 const boardTitle = $("#board-title");
 const boardSubtitle = $("#board-subtitle");
@@ -37,6 +42,7 @@ const infoZone = $("#info-zone");
 const infoCalib = $("#info-calib");
 const infoFocus = $("#info-focus");
 const infoWords = $("#info-words");
+const modeSummary = $("#mode-summary");
 const calibOverlay = $("#calibration-overlay");
 const calibCanvas = $("#calibration-canvas");
 const calibCtx = calibCanvas.getContext("2d");
@@ -45,21 +51,11 @@ const bannerEl = $("#banner");
 const bannerText = $("#banner-text");
 const gazeDot = $("#screen-gaze-dot");
 const sessionModal = $("#session-modal");
-const insightsModal = $("#insights-modal");
-const insightFatigueLevel = $("#insight-fatigue-level");
-const insightFatigueNote = $("#insight-fatigue-note");
-const insightStressLevel = $("#insight-stress-level");
-const insightStressNote = $("#insight-stress-note");
-const insightAttentionLevel = $("#insight-attention-level");
-const insightAttentionNote = $("#insight-attention-note");
-const insightExpressionLevel = $("#insight-expression-level");
-const insightExpressionNote = $("#insight-expression-note");
-const insightSummary = $("#insight-summary");
-const insightSummaryNote = $("#insight-summary-note");
 
 let ws = null;
 let cameraReady = false;
 let sending = false;
+let capturePending = false;
 let captureCanvas = null;
 let captureCtx = null;
 let frameInterval = null;
@@ -67,38 +63,24 @@ let calibrating = false;
 let bannerTimeout = null;
 
 let currentPage = "core";
+let currentMode = "patient";
 let messageWords = [];
 let activeGazeTarget = null;
 let activeGazeStartedAt = 0;
 let gazeCooldownUntil = 0;
 let resizeSyncTimer = null;
 let layoutSyncTimer = null;
-let lastBlinkEventAt = 0;
-let lastLongBlinkEventAt = 0;
-let lastHeadAwayEventAt = 0;
-let lastLowQualityEventAt = 0;
-let lastSeriousEmotionAt = 0;
-let lastSurpriseEmotionAt = 0;
 
-const TARGET_FPS = 15;
-const JPEG_QUALITY = 0.65;
-const AAC_DWELL_MS = 1100;
-const AAC_ACTION_COOLDOWN_MS = 850;
+const TARGET_FPS = 12;
+const JPEG_QUALITY = 0.58;
+const CAPTURE_WIDTH = 512;
+const CAPTURE_HEIGHT = 384;
+const AAC_DWELL_MS = 1450;
+const AAC_ACTION_COOLDOWN_MS = 1100;
+const AAC_TARGET_STICKY_PX = 42;
 const MAX_MESSAGE_WORDS = 14;
-const SIGNAL_WINDOW_MS = 60000;
 
-const healthSignals = {
-    samples: [],
-    blinkEvents: [],
-    longBlinkEvents: [],
-    headAwayEvents: [],
-    lowQualityEvents: [],
-    seriousEmotionEvents: [],
-    surpriseEmotionEvents: [],
-    lastEmotion: "—",
-};
-
-const AAC_PAGES = {
+const PATIENT_PAGES = {
     core: {
         kicker: "Muloqot paneli",
         title: "Asosiy so'zlar",
@@ -181,6 +163,171 @@ const AAC_PAGES = {
     },
 };
 
+const CARE_PAGES = {
+    care: {
+        kicker: "Parvarish paneli",
+        title: "Parvarish amallari",
+        subtitle: "Hamshira yoki qarovchi uchun tez-tez kerak bo'ladigan amallar.",
+        note: "amallar",
+        tiles: [
+            { label: "Hamshira", symbol: "N", hint: "chaqirish", tone: "coral" },
+            { label: "Shifokor", symbol: "Dr", hint: "ko'rik", tone: "slate" },
+            { label: "Dori", symbol: "Rx", hint: "dorilar", tone: "mint" },
+            { label: "Suv", symbol: "💧", hint: "ichimlik", tone: "sky" },
+            { label: "Aspirator", symbol: "↯", hint: "sekretsiya", tone: "coral" },
+            { label: "Kislorod", symbol: "O2", hint: "nafas", tone: "sky" },
+            { label: "Burang", symbol: "↺", hint: "pozitsiya", tone: "sand" },
+            { label: "Ko'taring", symbol: "↑", hint: "holat", tone: "gold" },
+            { label: "Yostiq", symbol: "▣", hint: "qulaylik", tone: "gold" },
+            { label: "Tozalang", symbol: "✦", hint: "gigiena", tone: "mint" },
+            { label: "Tekshiring", symbol: "?", hint: "nazorat", tone: "slate" },
+            { label: "Hojatxona", symbol: "WC", hint: "hojat", tone: "sand" },
+        ],
+    },
+    comfort: {
+        kicker: "Qulaylik",
+        title: "Qulaylik va holat",
+        subtitle: "Bemorning qulayligi va tana holatini tez ifodalash.",
+        note: "qulaylik",
+        tiles: [
+            { label: "Og'riq", symbol: "✚", hint: "og'riq", tone: "coral" },
+            { label: "Sovuq", symbol: "❄", hint: "harorat", tone: "sky" },
+            { label: "Issiq", symbol: "☼", hint: "harorat", tone: "gold" },
+            { label: "Chanqadim", symbol: "💧", hint: "ichimlik", tone: "sky" },
+            { label: "Ochman", symbol: "🍽", hint: "ovqat", tone: "lime" },
+            { label: "Charchadim", symbol: "☾", hint: "dam", tone: "rose" },
+            { label: "Tinch", symbol: "○", hint: "xotirjam", tone: "mint" },
+            { label: "Yotqizing", symbol: "↓", hint: "holat", tone: "sand" },
+            { label: "O'tiring", symbol: "↥", hint: "holat", tone: "gold" },
+            { label: "Pastga", symbol: "↧", hint: "balandlik", tone: "slate" },
+            { label: "Sekinroq", symbol: "≈", hint: "sur'at", tone: "sky" },
+            { label: "Tezroq", symbol: "≫", hint: "sur'at", tone: "coral" },
+        ],
+    },
+    confirm: {
+        kicker: "Tasdiqlash",
+        title: "Tasdiq va boshqaruv",
+        subtitle: "Ha/yo'q, davom ettirish yoki to'xtatish uchun tezkor javoblar.",
+        note: "tasdiq",
+        tiles: [
+            { label: "Ha", symbol: "✓", hint: "tasdiq", tone: "lime" },
+            { label: "Yo'q", symbol: "×", hint: "rad etish", tone: "rose" },
+            { label: "Yana", symbol: "↻", hint: "takror", tone: "sky" },
+            { label: "To'xta", symbol: "■", hint: "to'xtatish", tone: "coral" },
+            { label: "Yetarli", symbol: "■", hint: "bo'ldi", tone: "sand" },
+            { label: "Kerak", symbol: "+", hint: "talab", tone: "gold" },
+            { label: "Emas", symbol: "⊘", hint: "inkor", tone: "slate" },
+            { label: "Tushundim", symbol: "✓", hint: "angladim", tone: "mint" },
+            { label: "Tushunmadim", symbol: "?", hint: "izoh", tone: "slate" },
+            { label: "Og'ir", symbol: "!", hint: "kuchli", tone: "coral" },
+            { label: "Qulay", symbol: "◌", hint: "holat", tone: "mint" },
+            { label: "Rahmat", symbol: "♥", hint: "minnatdorchilik", tone: "gold" },
+        ],
+    },
+    family: {
+        kicker: "Aloqa",
+        title: "Oila va aloqa",
+        subtitle: "Oila bilan bog'lanish va kundalik aloqa uchun kerakli iboralar.",
+        note: "aloqa",
+        tiles: [
+            { label: "Ona", symbol: "M", hint: "oila", tone: "rose" },
+            { label: "Ota", symbol: "D", hint: "oila", tone: "sand" },
+            { label: "Oilam", symbol: "⌂", hint: "yaqinlar", tone: "gold" },
+            { label: "Telefon", symbol: "☎", hint: "aloqa", tone: "slate" },
+            { label: "Video", symbol: "▭", hint: "video", tone: "sky" },
+            { label: "Musiqa", symbol: "♫", hint: "ko'ngilochar", tone: "sky" },
+            { label: "TV", symbol: "▭", hint: "ekran", tone: "slate" },
+            { label: "Ibodat", symbol: "✦", hint: "ruhiy", tone: "gold" },
+            { label: "Kelishsin", symbol: "⇢", hint: "tashrif", tone: "mint" },
+            { label: "Uy", symbol: "⌂", hint: "joy", tone: "lime" },
+            { label: "Uxlamoqchiman", symbol: "☾", hint: "dam", tone: "rose" },
+            { label: "Gaplashay", symbol: "⋯", hint: "suhbat", tone: "mint" },
+        ],
+    },
+};
+
+const AAC_MODES = {
+    patient: {
+        name: "Asosiy panel",
+        summary: "Bemor muloqoti",
+        toggleLabel: "Parvarish paneli",
+        defaultPage: "core",
+        phraseCaption: "Ko'p ishlatiladigan tayyor gaplar.",
+        defaultPredictions: ["Men", "Ha", "Yo'q", "Yordam"],
+        quickReplies: [
+            { label: "Ha", tone: "lime", type: "fast" },
+            { label: "Yo'q", tone: "rose", type: "fast" },
+            { label: "Yordam kerak", tone: "coral", type: "phrase" },
+            { label: "Og'riq bor", tone: "coral", type: "phrase" },
+            { label: "To'xtating", tone: "sand", type: "phrase" },
+            { label: "Rahmat", tone: "gold", type: "phrase" },
+        ],
+        emergencyActions: [
+            { label: "Tez yordam kerak", tone: "danger" },
+            { label: "Nafas olish qiyin", tone: "danger" },
+            { label: "Kuchli og'riq", tone: "danger" },
+            { label: "Hamshirani chaqiring", tone: "danger" },
+        ],
+        phraseBank: [
+            "Men suv xohlayman",
+            "Meni burang",
+            "Menga yostiq kerak",
+            "Hojatxona kerak",
+            "Men charchadim",
+            "Oilam bilan gaplashmoqchiman",
+        ],
+        predictionMap: {
+            "__start__": ["Men", "Ha", "Yo'q", "Yordam"],
+            "men": ["Xohlayman", "Yaxshi", "Yomon", "Yordam"],
+            "men xohlayman": ["Suv", "Yordam", "Ko'proq", "Yostiq"],
+            "og'riq": ["Bor", "Ko'proq", "Shifokor"],
+            "yordam": ["Kerak", "Hamshira", "Tezroq"],
+            "hojatxona": ["Kerak"],
+            "nafas": ["Qiyin", "Kerak"],
+        },
+        pages: PATIENT_PAGES,
+    },
+    caregiver: {
+        name: "Parvarish paneli",
+        summary: "Qarov so'rovlari",
+        toggleLabel: "Asosiy panel",
+        defaultPage: "care",
+        phraseCaption: "Qarov va holat uchun tayyor gaplar.",
+        defaultPredictions: ["Meni", "Hamshira", "Og'riq", "Yostiq"],
+        quickReplies: [
+            { label: "Ha", tone: "lime", type: "fast" },
+            { label: "Yo'q", tone: "rose", type: "fast" },
+            { label: "Meni burang", tone: "sand", type: "phrase" },
+            { label: "Yostiqni to'g'rilang", tone: "gold", type: "phrase" },
+            { label: "Hamshirani chaqiring", tone: "coral", type: "phrase" },
+            { label: "Og'riqni tekshiring", tone: "coral", type: "phrase" },
+        ],
+        emergencyActions: [
+            { label: "Aspirator kerak", tone: "danger" },
+            { label: "Kislorodni tekshiring", tone: "danger" },
+            { label: "Dorini tekshiring", tone: "danger" },
+            { label: "Holatim yomonlashdi", tone: "danger" },
+        ],
+        phraseBank: [
+            "Meni chapga buring",
+            "Meni o'ngga buring",
+            "Boshingizni ko'taring",
+            "Kislorodni tekshiring",
+            "Dorini tekshiring",
+            "Aspirator kerak",
+        ],
+        predictionMap: {
+            "__start__": ["Meni", "Hamshira", "Og'riq", "Yostiq"],
+            "meni": ["Burang", "Ko'taring", "Yotqizing"],
+            "hamshira": ["Chaqiring", "Kerak"],
+            "og'riq": ["Bor", "Kuchli", "Tekshiring"],
+            "nafas": ["Qiyin", "Tekshiring"],
+            "yostiq": ["Kerak", "To'g'rilang"],
+        },
+        pages: CARE_PAGES,
+    },
+};
+
 function escapeHtml(value) {
     return value
         .replaceAll("&", "&amp;")
@@ -203,6 +350,65 @@ function getPx(value) {
     return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function setTextIfChanged(node, value) {
+    if (!node) return;
+    const nextValue = String(value);
+    if (node.textContent !== nextValue) {
+        node.textContent = nextValue;
+    }
+}
+
+function setStyleIfChanged(node, property, value) {
+    if (!node) return;
+    if (node.style[property] !== value) {
+        node.style[property] = value;
+    }
+}
+
+function getViewportSize() {
+    return {
+        width: window.innerWidth || document.documentElement.clientWidth || 1280,
+        height: window.innerHeight || document.documentElement.clientHeight || 720,
+    };
+}
+
+function getActiveModeConfig() {
+    return AAC_MODES[currentMode] || AAC_MODES.patient;
+}
+
+function getActivePages() {
+    return getActiveModeConfig().pages;
+}
+
+function normalizeToken(value) {
+    return String(value || "")
+        .trim()
+        .toLowerCase()
+        .replaceAll("’", "'")
+        .replaceAll("`", "'")
+        .replaceAll("ʻ", "'")
+        .replaceAll("ʼ", "'");
+}
+
+function tokenizeText(text) {
+    return String(text || "")
+        .split(/\s+/)
+        .map((part) => part.trim())
+        .filter(Boolean);
+}
+
+function uniqueValues(values) {
+    const seen = new Set();
+    const result = [];
+    for (const value of values) {
+        const key = normalizeToken(value);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        result.push(value);
+    }
+    return result;
+}
+
 function getGridColumnCount() {
     if (window.innerWidth <= 980) {
         return 3;
@@ -214,6 +420,9 @@ function syncLayoutFit() {
     if (!headerEl || !mainContent || !workspace || !composerCard || !boardShell || !boardMain || !boardHead) {
         return;
     }
+
+    const activePages = getActivePages();
+    const activePage = activePages[currentPage] || activePages[getActiveModeConfig().defaultPage];
 
     const viewportHeight = window.innerHeight;
     const mainStyles = getComputedStyle(mainContent);
@@ -232,14 +441,14 @@ function syncLayoutFit() {
     const boardMainGap = getPx(boardMainStyles.rowGap || boardMainStyles.gap);
     const boardHeadHeight = boardHead.offsetHeight;
     const cols = getGridColumnCount();
-    const rows = Math.ceil((AAC_PAGES[currentPage]?.tiles.length || 0) / cols);
+    const rows = Math.ceil(((activePage?.tiles.length) || 0) / cols);
     const gridGap = getPx(gridStyles.rowGap || gridStyles.gap);
     const gridAvailableHeight = Math.max(180, boardAvailableHeight - boardShellVerticalPadding - boardHeadHeight - boardMainGap);
     const rawRowHeight = Math.floor((gridAvailableHeight - (gridGap * Math.max(0, rows - 1))) / Math.max(1, rows));
     const minRowHeight = viewportHeight < 760 ? 90 : 108;
     const clampedRowHeight = Math.max(minRowHeight, Math.min(220, rawRowHeight));
     const navGap = getPx(boardNavStyles.rowGap || boardNavStyles.gap);
-    const navCount = Object.keys(AAC_PAGES).length;
+    const navCount = Object.keys(activePages).length;
     const rawNavHeight = Math.floor((boardAvailableHeight - boardShellVerticalPadding - (navGap * Math.max(0, navCount - 1))) / Math.max(1, navCount));
     const minNavHeight = viewportHeight < 760 ? 76 : 92;
     const clampedNavHeight = Math.max(minNavHeight, Math.min(160, rawNavHeight));
@@ -268,7 +477,6 @@ function scheduleLayoutFit() {
 function setHeaderView(view) {
     btnBoardView.classList.toggle("is-active", view === "board");
     btnOpenSession.classList.toggle("is-active", view === "session");
-    btnOpenInsights.classList.toggle("is-active", view === "insights");
 }
 
 function openSessionModal() {
@@ -279,19 +487,9 @@ function openSessionModal() {
     setHeaderView("session");
 }
 
-function openInsightsModal() {
-    closeOverlayWindows(false);
-    insightsModal.classList.remove("hidden");
-    insightsModal.setAttribute("aria-hidden", "false");
-    document.body.classList.add("modal-open");
-    setHeaderView("insights");
-}
-
 function closeOverlayWindows(resetHeader = true) {
     sessionModal.classList.add("hidden");
     sessionModal.setAttribute("aria-hidden", "true");
-    insightsModal.classList.add("hidden");
-    insightsModal.setAttribute("aria-hidden", "true");
     document.body.classList.remove("modal-open");
     if (resetHeader) {
         setHeaderView("board");
@@ -302,19 +500,156 @@ function closeSessionModal() {
     closeOverlayWindows(true);
 }
 
-function closeInsightsModal() {
-    closeOverlayWindows(true);
+function setStatus(state, text) {
+    const className = `status-badge status-${state}`;
+    if (statusBadge.className !== className) {
+        statusBadge.className = className;
+    }
+    setTextIfChanged(statusText, text);
 }
 
-function setStatus(state, text) {
-    statusBadge.className = `status-badge status-${state}`;
-    statusText.textContent = text;
+function setMessageWords(words) {
+    messageWords = tokenizeText(words.join(" ")).slice(0, MAX_MESSAGE_WORDS);
+    updateMessageDisplay();
+}
+
+function getPredictionSuggestions() {
+    const mode = getActiveModeConfig();
+    const predictions = [];
+    const normalizedWords = messageWords.map((word) => normalizeToken(word));
+    const normalizedText = normalizedWords.join(" ");
+
+    if (!normalizedText) {
+        predictions.push(...mode.defaultPredictions);
+    }
+
+    const tailKeys = [];
+    if (normalizedWords.length >= 2) {
+        tailKeys.push(normalizedWords.slice(-2).join(" "));
+    }
+    if (normalizedWords.length >= 1) {
+        tailKeys.push(normalizedWords.slice(-1).join(" "));
+    }
+    tailKeys.push("__start__");
+
+    for (const key of tailKeys) {
+        predictions.push(...(mode.predictionMap[key] || []));
+    }
+
+    const corpus = [
+        ...mode.phraseBank,
+        ...mode.quickReplies.map((item) => item.label),
+        ...mode.emergencyActions.map((item) => item.label),
+    ];
+    for (const page of Object.values(mode.pages)) {
+        corpus.push(...page.tiles.map((tile) => tile.label));
+    }
+
+    if (normalizedWords.length) {
+        for (const phrase of corpus) {
+            const phraseTokens = tokenizeText(phrase);
+            const normalizedPhraseTokens = phraseTokens.map((token) => normalizeToken(token));
+            const isPrefix = normalizedWords.every(
+                (token, index) => normalizedPhraseTokens[index] === token,
+            );
+            if (!isPrefix) continue;
+            if (normalizedPhraseTokens.length === normalizedWords.length) continue;
+
+            const remainder = phraseTokens
+                .slice(normalizedWords.length, normalizedWords.length + 2)
+                .join(" ");
+            if (remainder) {
+                predictions.push(remainder);
+            }
+        }
+    }
+
+    const unique = uniqueValues(predictions)
+        .filter((value) => normalizeToken(value) !== normalizeToken(messageWords.slice(-1)[0] || ""))
+        .slice(0, 6);
+    return unique;
+}
+
+function renderPredictionStrip() {
+    const predictions = getPredictionSuggestions();
+    predictionStrip.innerHTML = predictions.length
+        ? predictions.map((item) => `
+            <button
+                class="predict-chip gaze-target"
+                data-action="suggestion"
+                data-text="${escapeHtml(item)}"
+                data-label="${escapeHtml(item)}"
+            >
+                ${escapeHtml(item)}
+            </button>
+        `).join("")
+        : '<span class="utility-empty">Prediction hozircha yo\'q</span>';
+}
+
+function renderQuickStrip() {
+    const mode = getActiveModeConfig();
+    quickStrip.innerHTML = mode.quickReplies.map((item) => `
+        <button
+            class="quick-chip quick-chip-${item.type || "phrase"} tone-${item.tone} gaze-target"
+            data-action="phrase"
+            data-text="${escapeHtml(item.label)}"
+            data-label="${escapeHtml(item.label)}"
+        >
+            ${escapeHtml(item.label)}
+        </button>
+    `).join("");
+}
+
+function renderEmergencyStrip() {
+    const mode = getActiveModeConfig();
+    emergencyStrip.innerHTML = mode.emergencyActions.map((item) => `
+        <button
+            class="quick-chip quick-chip-emergency tone-${item.tone} gaze-target"
+            data-action="emergency"
+            data-text="${escapeHtml(item.label)}"
+            data-label="${escapeHtml(item.label)}"
+        >
+            ${escapeHtml(item.label)}
+        </button>
+    `).join("");
+}
+
+function renderPhraseBank() {
+    const mode = getActiveModeConfig();
+    phraseCaption.textContent = mode.phraseCaption;
+    phraseBank.innerHTML = mode.phraseBank.map((item) => `
+        <button
+            class="phrase-chip gaze-target"
+            data-action="phrase"
+            data-text="${escapeHtml(item)}"
+            data-label="${escapeHtml(item)}"
+        >
+            ${escapeHtml(item)}
+        </button>
+    `).join("");
+}
+
+function renderModeSummary() {
+    const mode = getActiveModeConfig();
+    modeBadge.textContent = mode.name;
+    modeSummary.textContent = mode.summary;
+    btnToggleMode.textContent = mode.toggleLabel;
+    btnToggleMode.dataset.label = mode.toggleLabel;
+}
+
+function renderSupportPanels() {
+    renderModeSummary();
+    renderPredictionStrip();
+    renderQuickStrip();
+    renderEmergencyStrip();
+    renderPhraseBank();
 }
 
 function updateMessageDisplay() {
-    infoWords.textContent = String(messageWords.length);
+    setTextIfChanged(infoWords, String(messageWords.length));
     if (messageWords.length === 0) {
         messageDisplay.innerHTML = '<span class="message-placeholder">Tanlangan so\'zlar shu yerda yig\'iladi</span>';
+        renderPredictionStrip();
         scheduleLayoutFit();
         return;
     }
@@ -322,44 +657,67 @@ function updateMessageDisplay() {
     messageDisplay.innerHTML = messageWords
         .map((word) => `<span class="message-chip">${escapeHtml(word)}</span>`)
         .join("");
+    renderPredictionStrip();
     scheduleLayoutFit();
 }
 
+function appendTokens(tokens, replace = false) {
+    const words = tokenizeText(tokens.join(" "));
+    if (!words.length) return;
+
+    const nextWords = replace ? [] : [...messageWords];
+    for (const word of words) {
+        if (nextWords.length >= MAX_MESSAGE_WORDS) {
+            showBanner("Matn uzunligi limiti to'ldi", 2);
+            break;
+        }
+        nextWords.push(word);
+    }
+    setMessageWords(nextWords);
+}
+
 function appendWord(word) {
+    const words = tokenizeText(word);
+    if (!words.length) {
+        return;
+    }
     if (messageWords.length >= MAX_MESSAGE_WORDS) {
         showBanner("Matn uzunligi limiti to'ldi", 2);
         return;
     }
+    appendTokens(words);
+}
 
-    messageWords.push(word);
-    updateMessageDisplay();
+function appendPhrase(text, replace = false) {
+    appendTokens(tokenizeText(text), replace);
 }
 
 function clearMessage() {
-    messageWords = [];
-    updateMessageDisplay();
+    setMessageWords([]);
 }
 
 function backspaceMessage() {
     if (messageWords.length === 0) return;
-    messageWords.pop();
-    updateMessageDisplay();
+    setMessageWords(messageWords.slice(0, -1));
 }
 
-function speakMessage() {
-    if (messageWords.length === 0) {
+function speakText(text, { replaceMessage = false, banner = "Matn gapirtirilmoqda" } = {}) {
+    const clean = String(text || "").trim();
+    if (!clean) {
         showBanner("Avval so'z tanlang", 2);
         return;
     }
 
-    const text = messageWords.join(" ");
+    if (replaceMessage) {
+        setMessageWords(tokenizeText(clean));
+    }
 
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
             command: "speak_text",
-            text,
+            text: clean,
         }));
-        showBanner("Matn gapirtirilmoqda", 2);
+        showBanner(banner, 2);
         return;
     }
 
@@ -368,18 +726,30 @@ function speakMessage() {
         return;
     }
 
-    const utterance = new SpeechSynthesisUtterance(text);
+    const utterance = new SpeechSynthesisUtterance(clean);
     utterance.lang = "uz-UZ";
     utterance.rate = 0.92;
     utterance.pitch = 1.0;
 
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
-    showBanner("Matn gapirtirildi", 2);
+    showBanner(banner, 2);
+}
+
+function speakMessage() {
+    if (messageWords.length === 0) {
+        showBanner("Avval so'z tanlang", 2);
+        return;
+    }
+    speakText(messageWords.join(" "), { banner: "Matn gapirtirilmoqda" });
 }
 
 function renderBoardNav() {
-    boardNav.innerHTML = Object.entries(AAC_PAGES)
+    const pages = getActivePages();
+    if (!pages[currentPage]) {
+        currentPage = getActiveModeConfig().defaultPage;
+    }
+    boardNav.innerHTML = Object.entries(pages)
         .map(([key, page], index) => `
             <button
                 class="board-tab gaze-target ${key === currentPage ? "is-active" : ""}"
@@ -397,7 +767,13 @@ function renderBoardNav() {
 }
 
 function renderBoardGrid() {
-    const page = AAC_PAGES[currentPage];
+    const pages = getActivePages();
+    if (!pages[currentPage]) {
+        currentPage = getActiveModeConfig().defaultPage;
+    }
+
+    const page = pages[currentPage];
+    if (!page) return;
     boardKicker.textContent = page.kicker;
     boardTitle.textContent = page.title;
     boardSubtitle.textContent = page.subtitle;
@@ -420,11 +796,13 @@ function renderBoardGrid() {
 }
 
 function setPage(pageKey) {
-    if (!AAC_PAGES[pageKey]) return;
+    const pages = getActivePages();
+    if (!pages[pageKey]) return;
     currentPage = pageKey;
     clearGazeSelection();
     renderBoardNav();
     renderBoardGrid();
+    renderPredictionStrip();
 }
 
 function clearGazeSelection() {
@@ -436,7 +814,23 @@ function clearGazeSelection() {
     activeGazeStartedAt = 0;
 }
 
+function pointHitsTarget(target, x, y, padding = 0) {
+    if (!target || !target.isConnected) return false;
+    if (target.disabled) return false;
+    const rect = target.getBoundingClientRect();
+    if (!rect.width || !rect.height) return false;
+    return (
+        x >= rect.left - padding
+        && x <= rect.right + padding
+        && y >= rect.top - padding
+        && y <= rect.bottom + padding
+    );
+}
+
 function getGazeTargetAt(x, y) {
+    if (pointHitsTarget(activeGazeTarget, x, y, AAC_TARGET_STICKY_PX)) {
+        return activeGazeTarget;
+    }
     const target = document.elementFromPoint(x, y)?.closest(".gaze-target");
     if (!target) return null;
     if (target.disabled) return null;
@@ -448,16 +842,31 @@ function performTargetAction(target, source = "manual") {
 
     if (action === "word") {
         appendWord(target.dataset.word || target.dataset.label || "");
+    } else if (action === "suggestion") {
+        appendPhrase(target.dataset.text || target.dataset.label || "");
+    } else if (action === "phrase") {
+        appendPhrase(target.dataset.text || target.dataset.label || "");
+    } else if (action === "emergency") {
+        const text = target.dataset.text || target.dataset.label || "";
+        speakText(text, {
+            replaceMessage: true,
+            banner: "Emergency signal yuborildi",
+        });
     } else if (action === "page") {
         setPage(target.dataset.page);
+    } else if (action === "toggle-mode") {
+        currentMode = currentMode === "patient" ? "caregiver" : "patient";
+        currentPage = getActiveModeConfig().defaultPage;
+        clearGazeSelection();
+        renderSupportPanels();
+        renderBoardNav();
+        renderBoardGrid();
+        updateMessageDisplay();
+        showBanner(`${getActiveModeConfig().name} ochildi`, 1.4);
     } else if (action === "open-session") {
         openSessionModal();
-    } else if (action === "open-insights") {
-        openInsightsModal();
     } else if (action === "close-session") {
         closeSessionModal();
-    } else if (action === "close-insights") {
-        closeInsightsModal();
     } else if (action === "show-board") {
         closeOverlayWindows(true);
     } else if (action === "clear") {
@@ -483,12 +892,12 @@ function updateGazeSelection(viewportX, viewportY) {
     const target = getGazeTargetAt(viewportX, viewportY);
 
     if (!target) {
-        infoFocus.textContent = "—";
+        setTextIfChanged(infoFocus, "—");
         clearGazeSelection();
         return;
     }
 
-    infoFocus.textContent = target.dataset.label || target.textContent.trim();
+    setTextIfChanged(infoFocus, target.dataset.label || target.textContent.trim());
 
     if (target !== activeGazeTarget) {
         clearGazeSelection();
@@ -546,108 +955,6 @@ function getCameraErrorMessage(err) {
     return `Kamera xatosi: ${name}`;
 }
 
-function pruneEvents(array, now, windowMs = SIGNAL_WINDOW_MS) {
-    while (array.length && now - array[0] > windowMs) {
-        array.shift();
-    }
-}
-
-function levelFromScore(score, medium, high) {
-    if (score >= high) return "Yuqori";
-    if (score >= medium) return "O'rta";
-    return "Past";
-}
-
-function updateInsightsPanel() {
-    const totalSamples = healthSignals.samples.length;
-    const trackingSamples = healthSignals.samples.filter((sample) => sample.state === "TRACKING").length;
-    const trackingRatio = totalSamples ? trackingSamples / totalSamples : 0;
-    const blinkCount = healthSignals.blinkEvents.length;
-    const longBlinkCount = healthSignals.longBlinkEvents.length;
-    const headAwayCount = healthSignals.headAwayEvents.length;
-    const lowQualityCount = healthSignals.lowQualityEvents.length;
-    const seriousCount = healthSignals.seriousEmotionEvents.length;
-    const surpriseCount = healthSignals.surpriseEmotionEvents.length;
-
-    const fatigueScore = (blinkCount / 6) + (longBlinkCount * 2) + (lowQualityCount * 0.6);
-    const stressScore = (seriousCount * 1.8) + (surpriseCount * 1.1) + (headAwayCount * 0.8);
-    const attentionPercent = Math.round(trackingRatio * 100);
-
-    const fatigueLevel = levelFromScore(fatigueScore, 3, 6);
-    const stressLevel = levelFromScore(stressScore, 3, 6);
-    const attentionLevel = attentionPercent >= 80 ? "Yaxshi" : attentionPercent >= 55 ? "O'rta" : "Past";
-
-    insightFatigueLevel.textContent = fatigueLevel;
-    insightFatigueNote.textContent = `${blinkCount} blink, ${longBlinkCount} uzun blink. Ko'paysa ko'z charchog'i yoki noqulaylik signali bo'lishi mumkin.`;
-
-    insightStressLevel.textContent = stressLevel;
-    insightStressNote.textContent = `${seriousCount} jiddiy, ${surpriseCount} hayron ekspressiya va ${headAwayCount} bosh og'ishi kuzatildi.`;
-
-    insightAttentionLevel.textContent = `${attentionLevel} (${attentionPercent}%)`;
-    insightAttentionNote.textContent = `So'nggi 60 soniyada kuzatuv barqarorligi taxminan ${attentionPercent}% bo'ldi.`;
-
-    insightExpressionLevel.textContent = healthSignals.lastEmotion || "—";
-    insightExpressionNote.textContent = "Bu hozirgi ekspressiya signali. Klinik tashxis sifatida talqin qilinmaydi.";
-
-    if (fatigueLevel === "Yuqori" || stressLevel === "Yuqori") {
-        insightSummary.textContent = "Signal oshgan";
-        insightSummaryNote.textContent = "Charchoq yoki noqulaylik signali ko'paygan. Bu kasallik tashxisi emas, lekin kuzatuvni kuchaytirish mumkin.";
-    } else if (fatigueLevel === "O'rta" || stressLevel === "O'rta") {
-        insightSummary.textContent = "Ehtiyotkor kuzatuv";
-        insightSummaryNote.textContent = "O'rta darajadagi yuz/ko'z signallari ko'rindi. Bu faqat yordamchi observatsion panel.";
-    } else {
-        insightSummary.textContent = "Barqaror signal";
-        insightSummaryNote.textContent = "Hozircha keskin signal ko'rinmadi. Baribir bu klinik xulosa bermaydi.";
-    }
-}
-
-function recordHealthSignals(data) {
-    const now = Date.now();
-
-    healthSignals.samples.push({ t: now, state: data.state || "IDLE" });
-    healthSignals.lastEmotion = data.emotion || "—";
-
-    if ((data.blink?.single || data.blink?.double) && now - lastBlinkEventAt > 700) {
-        healthSignals.blinkEvents.push(now);
-        lastBlinkEventAt = now;
-    }
-
-    if (data.blink?.long && now - lastLongBlinkEventAt > 1200) {
-        healthSignals.longBlinkEvents.push(now);
-        lastLongBlinkEventAt = now;
-    }
-
-    if (data.state === "HEAD_AWAY" && now - lastHeadAwayEventAt > 2000) {
-        healthSignals.headAwayEvents.push(now);
-        lastHeadAwayEventAt = now;
-    }
-
-    if ((data.state === "LOW_QUALITY" || data.state === "NO_FACE") && now - lastLowQualityEventAt > 2500) {
-        healthSignals.lowQualityEvents.push(now);
-        lastLowQualityEventAt = now;
-    }
-
-    if (String(data.emotion || "").includes("Jiddiy") && now - lastSeriousEmotionAt > 3000) {
-        healthSignals.seriousEmotionEvents.push(now);
-        lastSeriousEmotionAt = now;
-    }
-
-    if (String(data.emotion || "").includes("Hayron") && now - lastSurpriseEmotionAt > 3000) {
-        healthSignals.surpriseEmotionEvents.push(now);
-        lastSurpriseEmotionAt = now;
-    }
-
-    healthSignals.samples = healthSignals.samples.filter((sample) => now - sample.t <= SIGNAL_WINDOW_MS);
-    pruneEvents(healthSignals.blinkEvents, now);
-    pruneEvents(healthSignals.longBlinkEvents, now);
-    pruneEvents(healthSignals.headAwayEvents, now);
-    pruneEvents(healthSignals.lowQualityEvents, now);
-    pruneEvents(healthSignals.seriousEmotionEvents, now);
-    pruneEvents(healthSignals.surpriseEmotionEvents, now);
-
-    updateInsightsPanel();
-}
-
 function connectWS() {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(`${protocol}//${location.host}/ws`);
@@ -665,6 +972,8 @@ function connectWS() {
         btnCalibrate.disabled = true;
         btnRecalibrate.disabled = true;
         ws = null;
+        sending = false;
+        capturePending = false;
         gazeDot.classList.add("hidden");
         clearGazeSelection();
         setTimeout(connectWS, 2000);
@@ -696,14 +1005,12 @@ function handleServerMessage(data) {
         return;
     }
 
-    recordHealthSignals(data);
-
     if (data.fps !== undefined) {
-        fpsDisplay.textContent = `${data.fps} FPS`;
+        setTextIfChanged(fpsDisplay, `${data.fps} FPS`);
     }
 
-    infoFace.textContent = data.face_found ? "Topildi" : "Yo'q";
-    infoFace.style.color = data.face_found ? "var(--accent)" : "var(--danger)";
+    setTextIfChanged(infoFace, data.face_found ? "Topildi" : "Yo'q");
+    setStyleIfChanged(infoFace, "color", data.face_found ? "var(--accent)" : "var(--danger)");
 
     const stateMap = {
         TRACKING: "Kuzatuv",
@@ -716,7 +1023,7 @@ function handleServerMessage(data) {
         IDLE: "Kutish",
     };
 
-    infoState.textContent = stateMap[data.state] || data.state || "—";
+    setTextIfChanged(infoState, stateMap[data.state] || data.state || "—");
 
     if (data.state === "TRACKING") {
         setStatus("tracking", "Kuzatuv");
@@ -726,29 +1033,34 @@ function handleServerMessage(data) {
         setStatus("connected", "Ulangan");
     }
 
-    if (data.emotion) {
-        infoEmotion.textContent = data.emotion;
+    if (infoEmotion && data.emotion) {
+        setTextIfChanged(infoEmotion, data.emotion);
     }
 
     if (data.zone) {
-        infoZone.textContent = data.zone.name || `Zona ${data.zone.idx}`;
+        setTextIfChanged(infoZone, data.zone.name || `Zona ${data.zone.idx}`);
     } else {
-        infoZone.textContent = "—";
+        setTextIfChanged(infoZone, "—");
     }
 
     if (data.gaze) {
         const [sx, sy] = data.gaze;
-        infoGaze.textContent = `${Math.round(sx)}, ${Math.round(sy)}`;
+        setTextIfChanged(infoGaze, `${Math.round(sx)}, ${Math.round(sy)}`);
 
-        const scrW = window.screen.width || window.innerWidth;
-        const scrH = window.screen.height || window.innerHeight;
-        const pctX = Math.max(0, Math.min(1, sx / scrW));
-        const pctY = Math.max(0, Math.min(1, sy / scrH));
-        const viewportX = pctX * window.innerWidth;
-        const viewportY = pctY * window.innerHeight;
+        const { width: viewportWidth, height: viewportHeight } = getViewportSize();
+        const surfaceWidth = Math.max(1, Number(data.surface?.w) || viewportWidth);
+        const surfaceHeight = Math.max(1, Number(data.surface?.h) || viewportHeight);
+        const viewportX = Math.max(
+            0,
+            Math.min(viewportWidth - 1, (sx / surfaceWidth) * viewportWidth),
+        );
+        const viewportY = Math.max(
+            0,
+            Math.min(viewportHeight - 1, (sy / surfaceHeight) * viewportHeight),
+        );
 
-        gazeDot.style.left = `${viewportX}px`;
-        gazeDot.style.top = `${viewportY}px`;
+        setStyleIfChanged(gazeDot, "left", `${viewportX}px`);
+        setStyleIfChanged(gazeDot, "top", `${viewportY}px`);
         gazeDot.classList.remove("hidden");
 
         if (data.state === "TRACKING") {
@@ -757,7 +1069,7 @@ function handleServerMessage(data) {
             clearGazeSelection();
         }
     } else {
-        infoGaze.textContent = "—";
+        setTextIfChanged(infoGaze, "—");
         gazeDot.classList.add("hidden");
         clearGazeSelection();
     }
@@ -765,12 +1077,12 @@ function handleServerMessage(data) {
     if (data.calibration) {
         const calibration = data.calibration;
 
-        if (calibration.active) {
-            calibrating = true;
-            calibOverlay.classList.remove("hidden");
-            infoCalib.textContent = `${calibration.current}/${calibration.total}`;
-            drawCalibrationPoint(calibration);
-        } else {
+            if (calibration.active) {
+                calibrating = true;
+                calibOverlay.classList.remove("hidden");
+                setTextIfChanged(infoCalib, `${calibration.current}/${calibration.total}`);
+                drawCalibrationPoint(calibration, data.surface);
+            } else {
             if (calibrating) {
                 calibrating = false;
                 calibOverlay.classList.add("hidden");
@@ -780,7 +1092,7 @@ function handleServerMessage(data) {
                 }
             }
 
-            infoCalib.textContent = calibration.done ? "Ha" : "Yo'q";
+            setTextIfChanged(infoCalib, calibration.done ? "Ha" : "Yo'q");
         }
 
         if (calibration.error) {
@@ -791,9 +1103,10 @@ function handleServerMessage(data) {
     sending = false;
 }
 
-function drawCalibrationPoint(calibration) {
-    const width = (calibCanvas.width = window.innerWidth);
-    const height = (calibCanvas.height = window.innerHeight);
+function drawCalibrationPoint(calibration, surface) {
+    const { width, height } = getViewportSize();
+    calibCanvas.width = width;
+    calibCanvas.height = height;
 
     calibCtx.clearRect(0, 0, width, height);
     calibCtx.fillStyle = "rgba(0, 0, 0, 0.88)";
@@ -801,10 +1114,10 @@ function drawCalibrationPoint(calibration) {
 
     if (!calibration.point) return;
 
-    const scrW = window.screen.width || width;
-    const scrH = window.screen.height || height;
-    const px = (calibration.point.x / scrW) * width;
-    const py = (calibration.point.y / scrH) * height;
+    const surfaceWidth = Math.max(1, Number(surface?.w) || width);
+    const surfaceHeight = Math.max(1, Number(surface?.h) || height);
+    const px = (calibration.point.x / surfaceWidth) * width;
+    const py = (calibration.point.y / surfaceHeight) * height;
     const radius = 34;
     const startAngle = -Math.PI / 2;
     const endAngle = startAngle + (2 * Math.PI * calibration.progress);
@@ -866,11 +1179,16 @@ async function startCamera() {
         await video.play();
 
         captureCanvas = document.createElement("canvas");
-        captureCanvas.width = 640;
-        captureCanvas.height = 480;
-        captureCtx = captureCanvas.getContext("2d");
+        captureCanvas.width = CAPTURE_WIDTH;
+        captureCanvas.height = CAPTURE_HEIGHT;
+        captureCtx = captureCanvas.getContext("2d", {
+            alpha: false,
+            desynchronized: true,
+        }) || captureCanvas.getContext("2d");
 
         cameraReady = true;
+        sending = false;
+        capturePending = false;
         btnStartCam.textContent = "Kamera tayyor";
         btnStartCam.disabled = true;
         showBanner("Kamera ochildi", 2);
@@ -888,21 +1206,40 @@ async function startCamera() {
 }
 
 function sendFrame() {
-    if (!cameraReady || !ws || ws.readyState !== WebSocket.OPEN || sending) {
+    if (
+        !cameraReady
+        || !ws
+        || ws.readyState !== WebSocket.OPEN
+        || sending
+        || capturePending
+        || document.hidden
+    ) {
         return;
     }
 
-    captureCtx.drawImage(video, 0, 0, 640, 480);
+    capturePending = true;
+    captureCtx.drawImage(video, 0, 0, CAPTURE_WIDTH, CAPTURE_HEIGHT);
     captureCanvas.toBlob(
         (blob) => {
+            capturePending = false;
             if (!blob || !ws || ws.readyState !== WebSocket.OPEN) {
+                sending = false;
                 return;
             }
 
             sending = true;
-            blob.arrayBuffer().then((buffer) => {
-                ws.send(buffer);
-            });
+            blob.arrayBuffer()
+                .then((buffer) => {
+                    if (!ws || ws.readyState !== WebSocket.OPEN) {
+                        sending = false;
+                        return;
+                    }
+                    ws.send(buffer);
+                })
+                .catch((error) => {
+                    sending = false;
+                    console.error("Frame encode xatosi:", error);
+                });
         },
         "image/jpeg",
         JPEG_QUALITY,
@@ -911,11 +1248,12 @@ function sendFrame() {
 
 function startCalibration() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const { width, height } = getViewportSize();
 
     ws.send(JSON.stringify({
         command: "start_calibration",
-        screen_w: window.screen.width || window.innerWidth,
-        screen_h: window.screen.height || window.innerHeight,
+        screen_w: width,
+        screen_h: height,
     }));
 
     calibrating = true;
@@ -925,10 +1263,11 @@ function startCalibration() {
 
 function syncScreenMetrics() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const { width, height } = getViewportSize();
     ws.send(JSON.stringify({
         command: "set_screen",
-        screen_w: window.screen.width || window.innerWidth,
-        screen_h: window.screen.height || window.innerHeight,
+        screen_w: width,
+        screen_h: height,
     }));
 }
 
@@ -948,7 +1287,7 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-    if ((!sessionModal.classList.contains("hidden") || !insightsModal.classList.contains("hidden")) && event.key === "Escape") {
+    if (sessionModal && !sessionModal.classList.contains("hidden") && event.key === "Escape") {
         closeOverlayWindows(true);
         return;
     }
@@ -962,6 +1301,12 @@ document.addEventListener("keydown", (event) => {
     }
 });
 
+document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) return;
+    clearGazeSelection();
+    gazeDot.classList.add("hidden");
+});
+
 window.addEventListener("resize", () => {
     if (resizeSyncTimer) {
         clearTimeout(resizeSyncTimer);
@@ -972,22 +1317,17 @@ window.addEventListener("resize", () => {
     }, 150);
 });
 
-sessionModal.addEventListener("click", (event) => {
+sessionModal?.addEventListener("click", (event) => {
     if (event.target.matches("[data-session-close]")) {
         closeSessionModal();
     }
 });
 
-insightsModal.addEventListener("click", (event) => {
-    if (event.target.matches("[data-insights-close]")) {
-        closeInsightsModal();
-    }
-});
-
 setStatus("disconnected", "Kamerani oching");
+currentPage = getActiveModeConfig().defaultPage;
 setHeaderView("board");
+renderSupportPanels();
 updateMessageDisplay();
-updateInsightsPanel();
 renderBoardNav();
 renderBoardGrid();
 window.addEventListener("load", syncLayoutFit);

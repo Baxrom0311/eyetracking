@@ -21,12 +21,25 @@ class ZoneAnalyzer:
     Markaz zonasi (kichikroq maydon) ustun — overlap bo'lsa markaz g'alaba qiladi.
     """
 
-    def __init__(self):
-        self.sw, self.sh = _SCREEN_SIZE
+    def __init__(self, screen_w: int | None = None, screen_h: int | None = None):
+        default_w, default_h = _SCREEN_SIZE
+        self.sw = max(1, int(screen_w if screen_w is not None else default_w))
+        self.sh = max(1, int(screen_h if screen_h is not None else default_h))
         self._zone_start: float = 0.0
         self._current_zone: int = -1
         self._last_trigger: dict = {}
         self._fired_this_session: list = []
+
+    def set_screen_size(
+        self,
+        screen_w: int,
+        screen_h: int,
+        reset_zone: bool = True,
+    ) -> None:
+        self.sw = max(1, int(screen_w))
+        self.sh = max(1, int(screen_h))
+        if reset_zone:
+            self.reset_zone()
 
     def update(self, sx: int, sy: int) -> Optional[dict]:
         nx = sx / self.sw

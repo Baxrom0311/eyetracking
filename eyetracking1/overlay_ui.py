@@ -11,8 +11,10 @@ from state_machine import State, ERROR_STATES
 
 try:
     import pyautogui
+    _SCREEN_SIZE = pyautogui.size()
 except Exception:
     pyautogui = None
+    _SCREEN_SIZE = (1920, 1080)
 
 
 class OverlayUI:
@@ -26,21 +28,26 @@ class OverlayUI:
     """
 
     def __init__(self):
-        self.sw, self.sh = pyautogui.size()
+        self.sw, self.sh = _SCREEN_SIZE
         self._banner_text = ""
         self._banner_t    = 0.0
         self._banner_dur  = 3.0   # sekund ko'rinadi
+
+    def set_screen_size(self, screen_w: int, screen_h: int) -> None:
+        self.sw = max(1, int(screen_w))
+        self.sh = max(1, int(screen_h))
 
     def draw(self, frame: np.ndarray, state: State,
              gaze_screen: Optional[Tuple[int, int]],
              zone_idx: int, zone_progress: float,
              fps: float, brightness: int,
-             dwell_progress: float = 0.0) -> np.ndarray:
+             dwell_progress: float = 0.0,
+             show_zones: bool = True) -> np.ndarray:
 
         h, w = frame.shape[:2]
 
         # ── Zonalar chegarasi ─────────────────────────────
-        if OVERLAY_SHOW_ZONES and state != State.CALIBRATING:
+        if OVERLAY_SHOW_ZONES and show_zones and state != State.CALIBRATING:
             self._draw_zones(frame, w, h, zone_idx, zone_progress)
 
         # ── Gaze cursor ───────────────────────────────────

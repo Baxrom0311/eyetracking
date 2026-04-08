@@ -17,7 +17,11 @@ from face_tracker import FaceTracker
 from gaze_mapper import GazeMapper
 from calibration import CalibrationManager
 from zone_analyzer import ZoneAnalyzer
-from settings import ZONE_FIRED_BANNER_SEC
+from settings import (
+    ZONE_FIRED_BANNER_SEC,
+    WEB_ENABLE_EMOTION,
+    WEB_ENABLE_ZONE_ANALYSIS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +33,15 @@ class GazeSession:
     """
 
     def __init__(self):
-        self.tracker = FaceTracker()
+        self.track_emotion = WEB_ENABLE_EMOTION
+        self.zone_analysis_enabled = WEB_ENABLE_ZONE_ANALYSIS
+        self.tracker = FaceTracker(enable_blendshapes=self.track_emotion)
         self.mapper = GazeMapper()
         self.calib_mgr = CalibrationManager(self.mapper.screen_w, self.mapper.screen_h)
-        self.zones = ZoneAnalyzer()
+        self.zones = (
+            ZoneAnalyzer(self.mapper.screen_w, self.mapper.screen_h)
+            if self.zone_analysis_enabled else None
+        )
         self.screen_w = self.mapper.screen_w
         self.screen_h = self.mapper.screen_h
 
@@ -50,12 +59,7 @@ class GazeSession:
         self._frame_count = 0
         self._fps_start = time.time()
         self._current_fps = 0.0
-
-        # Saqlangan kalibratsiyani yuklash
-        saved_model = CalibrationManager.load_saved()
-        if saved_model is not None and self.mapper.set_calibration(saved_model):
-            self.calibration_done = True
-            logger.info("Session: saqlangan kalibrasiya yuklandi.")
+        self._saved_calibration_checked = False
 
     def _reset_zone_state(self):
         self.gaze_screen = None
@@ -63,17 +67,45 @@ class GazeSession:
         self.zone_progress = 0.0
         self.zone_fired_until = 0.0
         self.zone_message = None
-        self.zones.reset_zone()
+        if self.zones is not None:
+            self.zones.reset_zone()
+
+    def _load_saved_calibration(self):
+        if self._saved_calibration_checked:
+            return
+        self._saved_calibration_checked = True
+        saved_model = CalibrationManager.load_saved(self.screen_w, self.screen_h)
+        if saved_model is not None and self.mapper.set_calibration(saved_model):
+            self.calibration_done = True
+            logger.info("Session: saqlangan kalibrasiya yuklandi.")
 
     def set_screen_size(self, screen_w: int, screen_h: int):
         screen_w = max(1, int(screen_w))
         screen_h = max(1, int(screen_h))
-        if screen_w == self.screen_w and screen_h == self.screen_h:
-            return
-        self.screen_w = screen_w
-        self.screen_h = screen_h
-        self.mapper.set_screen_size(screen_w, screen_h)
+        size_changed = screen_w != self.screen_w or screen_h != self.screen_h
+        if size_changed:
+            had_calibration = self.calibration_done or self.calibrating
+            self.screen_w = screen_w
+            self.screen_h = screen_h
+            self.mapper.set_screen_size(screen_w, screen_h)
+            if self.zones is not None:
+                self.zones.set_screen_size(screen_w, screen_h)
+            self._reset_zone_state()
+
+            if had_calibration:
+                self.mapper.clear_calibration(reset_filter=True)
+                self.calibration_done = False
+                if self.calibrating:
+                    self.calib_mgr = CalibrationManager(self.screen_w, self.screen_h)
+                    self.calib_mgr.start()
+                logger.info("Session: ekran o'lchami o'zgardi, kalibrasiya bekor qilindi.")
+        else:
+            if self.zones is not None:
+                self.zones.set_screen_size(screen_w, screen_h, reset_zone=False)
+
         logger.info("Session: ekran o'lchami yangilandi (%dx%d).", screen_w, screen_h)
+        if not self.calibrating and not self.calibration_done:
+            self._load_saved_calibration()
 
     def process_frame(self, jpeg_bytes: bytes) -> Dict[str, Any]:
         """
@@ -105,6 +137,10 @@ class GazeSession:
             "gaze": None,
             "state": "IDLE",
             "zone": None,
+            "surface": {
+                "w": self.screen_w,
+                "h": self.screen_h,
+            },
             "calibration": {
                 "active": self.calibrating,
                 "point": None,
@@ -113,12 +149,7 @@ class GazeSession:
                 "total": 0,
                 "done": self.calibration_done,
             },
-            "emotion": face_data.emotion if face_data.found else "😶 Yuz yo'q",
-            "blink": {
-                "single": self.tracker.blink_detector.single_blink,
-                "double": self.tracker.blink_detector.double_blink,
-                "long": self.tracker.blink_detector.long_blink,
-            },
+            "emotion": face_data.emotion if self.track_emotion and face_data.found else "—",
         }
 
         # Kalibratsiya jarayoni
@@ -162,7 +193,7 @@ class GazeSession:
                 result["gaze"] = [round(sx, 1), round(sy, 1)]
 
                 # Zona tahlili
-                if time.time() >= self.zone_fired_until:
+                if self.zones is not None and time.time() >= self.zone_fired_until:
                     zone_result = self.zones.update(sx, sy)
                     z_idx, z_prog = self.zones.get_progress(sx, sy)
                     self.zone_idx = z_idx
@@ -193,6 +224,7 @@ class GazeSession:
 
     def start_calibration(self, screen_w: int, screen_h: int):
         """Kalibratsiyani boshlash."""
+        self._saved_calibration_checked = True
         self.set_screen_size(screen_w, screen_h)
         self.mapper.clear_calibration(reset_filter=True)
         self.calib_mgr = CalibrationManager(self.screen_w, self.screen_h)
@@ -204,6 +236,7 @@ class GazeSession:
 
     def reset_calibration(self):
         """Kalibratsiyani bekor qilish."""
+        self._saved_calibration_checked = True
         self.calibrating = False
         self.calibration_done = False
         self.mapper.clear_calibration(reset_filter=True)

@@ -8,9 +8,13 @@ from typing import List, Tuple, Optional
 from settings import (
     CALIB_FILE,
     CALIB_DWELL_SEC,
+    CALIB_MAX_INVALID_SEC,
+    CALIB_MAX_POINT_MEAN_ERR_RATIO,
+    CALIB_MAX_RMSE_RATIO,
     CALIB_MIN_FILTERED_SAMPLES,
     CALIB_MIN_GAZE_SPAN_X,
     CALIB_MIN_GAZE_SPAN_Y,
+    CALIB_MIN_POINTS_REQUIRED,
     CALIB_OUTLIER_Z,
     CALIB_POINTS,
     CALIB_PREVIEW_SCALE,
@@ -33,6 +37,12 @@ class RidgeCalibrationModel:
     alpha: float = CALIB_RIDGE_ALPHA
     coef_: np.ndarray = field(default_factory=lambda: np.zeros((2, 5), dtype=float))
     intercept_: np.ndarray = field(default_factory=lambda: np.zeros(2, dtype=float))
+    rmse_px: float = 0.0
+    max_mean_error_px: float = 0.0
+    screen_w: int = 0
+    screen_h: int = 0
+    point_count: int = 0
+    sample_count: int = 0
 
     def fit(self, x_data, y_data):
         x_data = np.asarray(x_data, dtype=float)
@@ -76,6 +86,7 @@ class CalibrationManager:
         self._model   = None
         self.done     = False
         self.active   = False
+        self._pause_t: Optional[float] = None
 
     # ── Kalibrasiyani boshlash ─────────────────────────────
     def start(self):
@@ -84,6 +95,7 @@ class CalibrationManager:
         self.active   = True
         self.done     = False
         self._model   = None
+        self._pause_t = None
         for p in self._points:
             p.samples.clear()
         logger.info("Kalibrasiya boshlandi.")
@@ -97,20 +109,34 @@ class CalibrationManager:
         if not self.active or self.done:
             return False
 
+        now = time.time()
         pt = self._points[self._current]
         if gaze_norm is None:
-            pt.samples.clear()
-            self._start_t = time.time()
+            if self._pause_t is None:
+                self._pause_t = now
+            elif now - self._pause_t >= CALIB_MAX_INVALID_SEC:
+                if pt.samples:
+                    logger.info(
+                        "Kalibrasiya nuqtasi %d uzoq uzildi, nuqta qayta boshlandi.",
+                        self._current + 1,
+                    )
+                pt.samples.clear()
+                self._start_t = now
+                self._pause_t = None
             return False
 
-        elapsed = time.time() - self._start_t
+        if self._pause_t is not None:
+            self._start_t += now - self._pause_t
+            self._pause_t = None
+
+        elapsed = now - self._start_t
         pt.samples.append(gaze_norm)
 
         if elapsed >= CALIB_DWELL_SEC:
             logger.info(f"Nuqta {self._current+1}/{len(self._points)} tayyor "
                         f"({len(pt.samples)} sample)")
             self._current += 1
-            self._start_t = time.time()
+            self._start_t = now
             if self._current >= len(self._points):
                 try:
                     self._fit()
@@ -131,7 +157,8 @@ class CalibrationManager:
             return frame
 
         pt      = self._points[self._current]
-        elapsed = time.time() - self._start_t
+        now = self._pause_t if self._pause_t is not None else time.time()
+        elapsed = now - self._start_t
         ratio   = min(1.0, elapsed / CALIB_DWELL_SEC)
 
         # Qora fon overlay
@@ -170,6 +197,10 @@ class CalibrationManager:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 180, 180), 1)
         cv2.putText(frame, f"Sample: {len(pt.samples)}", (20, 100),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 220, 180), 1)
+        if self._pause_t is not None:
+            cv2.putText(frame, "Signal vaqtincha yo'q, davom etishi uchun ko'z topilsin",
+                        (20, 126),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.48, (120, 180, 255), 1)
 
         if preview is not None:
             inset_w = max(200, int(frame.shape[1] * CALIB_PREVIEW_SCALE))
@@ -187,6 +218,7 @@ class CalibrationManager:
     def _fit(self):
         X, Y = [], []
         point_means = []
+        point_feature_sets = []
         for pt in self._points:
             if not pt.samples:
                 continue
@@ -212,13 +244,29 @@ class CalibrationManager:
             arr = filtered
             mx, my = arr.mean(axis=0)
             point_means.append([mx, my])
+            point_x = []
+            point_y = []
             for nx, ny in arr:
-                X.append([nx, ny, nx**2, ny**2, nx * ny])
-                Y.append([pt.screen_x, pt.screen_y])
+                feat = [nx, ny, nx**2, ny**2, nx * ny]
+                target = [pt.screen_x, pt.screen_y]
+                X.append(feat)
+                Y.append(target)
+                point_x.append(feat)
+                point_y.append(target)
+            point_feature_sets.append(
+                (
+                    np.asarray(point_x, dtype=float),
+                    np.asarray(point_y, dtype=float),
+                )
+            )
 
         X, Y = np.array(X, dtype=float), np.array(Y, dtype=float)
         if len(X) < 3:
             raise RuntimeError("Kalibrasiya uchun yetarli sample yig'ilmadi.")
+        if len(point_means) < CALIB_MIN_POINTS_REQUIRED:
+            raise RuntimeError(
+                f"Kalibrasiya uchun yetarli nuqta yig'ilmadi: {len(point_means)}/{len(self._points)}."
+            )
         if point_means:
             span_x, span_y = np.ptp(np.asarray(point_means, dtype=float), axis=0)
             logger.info(
@@ -235,6 +283,30 @@ class CalibrationManager:
                 )
         model = RidgeCalibrationModel(alpha=CALIB_RIDGE_ALPHA)
         model.fit(X, Y)
+        pred = model.predict(X)
+        sample_errors = np.linalg.norm(pred - Y, axis=1)
+        rmse_px = float(np.sqrt(np.mean(sample_errors**2))) if len(sample_errors) else 0.0
+        point_mean_errors = []
+        for point_x, point_y in point_feature_sets:
+            point_pred = model.predict(point_x)
+            point_errors = np.linalg.norm(point_pred - point_y, axis=1)
+            point_mean_errors.append(float(np.mean(point_errors)))
+        max_point_mean_error = max(point_mean_errors or [0.0])
+
+        max_rmse_px = min(self.sw, self.sh) * CALIB_MAX_RMSE_RATIO
+        max_point_err_px = min(self.sw, self.sh) * CALIB_MAX_POINT_MEAN_ERR_RATIO
+        if rmse_px > max_rmse_px or max_point_mean_error > max_point_err_px:
+            raise RuntimeError(
+                "Kalibrasiya sifati past. "
+                f"RMSE={rmse_px:.1f}px, point_mean_max={max_point_mean_error:.1f}px"
+            )
+
+        model.rmse_px = rmse_px
+        model.max_mean_error_px = max_point_mean_error
+        model.screen_w = self.sw
+        model.screen_h = self.sh
+        model.point_count = len(point_means)
+        model.sample_count = int(len(X))
         self._model = model
 
         # Saqlash
@@ -247,6 +319,12 @@ class CalibrationManager:
                         "coef": coef,
                         "intercept": inter,
                         "alpha": model.alpha,
+                        "screen_w": self.sw,
+                        "screen_h": self.sh,
+                        "rmse_px": model.rmse_px,
+                        "max_mean_error_px": model.max_mean_error_px,
+                        "point_count": model.point_count,
+                        "sample_count": model.sample_count,
                     },
                     f,
                 )
@@ -285,7 +363,8 @@ class CalibrationManager:
         """Hozirgi nuqtadagi progress (0.0-1.0)."""
         if not self.active:
             return 0.0
-        elapsed = time.time() - self._start_t
+        now = self._pause_t if self._pause_t is not None else time.time()
+        elapsed = now - self._start_t
         return min(1.0, elapsed / CALIB_DWELL_SEC)
 
     def current_index(self) -> int:
@@ -302,13 +381,58 @@ class CalibrationManager:
 
     # ── Saqlanganni yuklash ───────────────────────────────
     @staticmethod
-    def load_saved() -> Optional[object]:
+    def load_saved(
+        expected_screen_w: Optional[int] = None,
+        expected_screen_h: Optional[int] = None,
+    ) -> Optional[object]:
         try:
             with open(CALIB_FILE) as f:
                 data = json.load(f)
+            saved_screen_w = data.get("screen_w")
+            saved_screen_h = data.get("screen_h")
+            legacy_without_screen = False
+            if saved_screen_w is not None and saved_screen_h is not None:
+                saved_screen_w = int(saved_screen_w)
+                saved_screen_h = int(saved_screen_h)
+            else:
+                legacy_without_screen = True
+                logger.info(
+                    "Saqlangan kalibrasiya legacy formatda. Ekran metadata yo'q, "
+                    "ehtiyotkorlik bilan yuklanmoqda."
+                )
+
+            if (
+                not legacy_without_screen
+                and expected_screen_w is not None
+                and expected_screen_h is not None
+            ):
+                expected_screen_w = int(expected_screen_w)
+                expected_screen_h = int(expected_screen_h)
+                if (
+                    saved_screen_w != expected_screen_w
+                    or saved_screen_h != expected_screen_h
+                ):
+                    logger.info(
+                        "Saqlangan kalibrasiya boshqa ekran uchun: %dx%d, hozir %dx%d.",
+                        saved_screen_w,
+                        saved_screen_h,
+                        expected_screen_w,
+                        expected_screen_h,
+                    )
+                    return None
+
             model = RidgeCalibrationModel(alpha=float(data.get("alpha", CALIB_RIDGE_ALPHA)))
             model.coef_      = np.array(data["coef"], dtype=float)
-            model.intercept_ = np.array(data["intercept"], dtype=float)
+            model.intercept_ = np.array(
+                data.get("intercept", data.get("inter", [0.0, 0.0])),
+                dtype=float,
+            )
+            model.rmse_px = float(data.get("rmse_px", 0.0))
+            model.max_mean_error_px = float(data.get("max_mean_error_px", 0.0))
+            model.screen_w = int(saved_screen_w or expected_screen_w or 0)
+            model.screen_h = int(saved_screen_h or expected_screen_h or 0)
+            model.point_count = int(data.get("point_count", 0))
+            model.sample_count = int(data.get("sample_count", 0))
             logger.info("Saqlangan kalibrasiya yuklandi.")
             return model
         except Exception:

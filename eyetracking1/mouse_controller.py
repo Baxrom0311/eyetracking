@@ -5,6 +5,7 @@ try:
     import pyautogui
     _HAS_PYAUTOGUI = True
 except Exception:
+    pyautogui = None
     _HAS_PYAUTOGUI = False
 
 from settings import (
@@ -34,12 +35,23 @@ class MouseController:
         self._dwell_fired = False
         self._dwell_suppress_until = 0.0
         self._last_click_t = 0.0
-        self._click_cooldown = 1.0   # sec — ketma-ket click oldini olish
+        self._click_cooldown = 1.4   # sec — ketma-ket click oldini olish
+        self._backend_warning_emitted = False
         logger.info("MouseController tayyor.")
+
+    def _backend_ready(self) -> bool:
+        if _HAS_PYAUTOGUI:
+            return True
+        if not self._backend_warning_emitted:
+            logger.warning("PyAutoGUI mavjud emas. Cursor va click funksiyalari o'chirildi.")
+            self._backend_warning_emitted = True
+        return False
 
     # ── Cursor harakati ───────────────────────────────────
     def move(self, x: int, y: int):
         """Cursor ni shu koordinatga ko'chiradi."""
+        if not self._backend_ready():
+            return
         try:
             pyautogui.moveTo(x, y, _pause=False)
         except pyautogui.FailSafeException:
@@ -55,10 +67,12 @@ class MouseController:
         return True
 
     # ── Blink click ───────────────────────────────────────
-    def blink_click(self, double: bool = False):
+    def blink_click(self, double: bool = False) -> bool:
         """Blink aniqlanganda click qiladi."""
+        if not self._backend_ready():
+            return False
         if not self._consume_click():
-            return
+            return False
         try:
             if double:
                 pyautogui.doubleClick(_pause=False)
@@ -66,21 +80,29 @@ class MouseController:
             else:
                 pyautogui.click(_pause=False)
                 logger.debug("Click (blink)")
+            return True
         except Exception as e:
             logger.error(f"Click xatosi: {e}")
+            return False
 
-    def right_click(self):
+    def right_click(self) -> bool:
         """Long blink = right click."""
+        if not self._backend_ready():
+            return False
         if not self._consume_click():
-            return
+            return False
         try:
             pyautogui.rightClick(_pause=False)
             logger.debug("Right click (long blink)")
+            return True
         except Exception as e:
             logger.error(f"Right click xatosi: {e}")
+            return False
 
     def left_click(self):
         """Oddiy left click."""
+        if not self._backend_ready():
+            return False
         if not self._consume_click():
             return False
         try:

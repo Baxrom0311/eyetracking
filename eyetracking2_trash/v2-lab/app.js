@@ -1115,9 +1115,6 @@ function bind() {
     btnStartCam.addEventListener("click", startTracker);
     btnCalibrate.addEventListener("click", startCalibration);
     btnRecalibrate.addEventListener("click", startCalibration);
-    btnBackspace.addEventListener("click", backspaceMessage);
-    btnClearMessage.addEventListener("click", clearMessage);
-    btnSpeak.addEventListener("click", speakMessage);
 
     document.addEventListener("click", (event) => {
         const target = event.target.closest(".gaze-target");

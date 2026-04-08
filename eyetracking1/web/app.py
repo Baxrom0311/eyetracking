@@ -1,13 +1,15 @@
 """
 GazeSpeak Web — FastAPI server.
 Ishga tushirish:
-    cd web && uvicorn app:app --reload --host 0.0.0.0 --port 8000
+    cd web && uvicorn app:app --reload --host 127.0.0.1 --port 8000
 """
 
+import asyncio
 import json
 import logging
 import sys
 import os
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
@@ -40,6 +42,16 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+def _origin_allowed(origin: str | None, host: str | None) -> bool:
+    if not origin or not host:
+        return True
+    try:
+        parsed = urlparse(origin)
+    except Exception:
+        return False
+    return parsed.netloc == host
+
+
 @app.get("/")
 async def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
@@ -55,6 +67,13 @@ async def shutdown_event():
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
+    origin = ws.headers.get("origin")
+    host = ws.headers.get("host")
+    if not _origin_allowed(origin, host):
+        logger.warning("WebSocket bloklandi. Origin=%s Host=%s", origin, host)
+        await ws.close(code=1008)
+        return
+
     await ws.accept()
     session = GazeSession()
     logger.info("Yangi WebSocket ulanish.")
@@ -62,10 +81,12 @@ async def websocket_endpoint(ws: WebSocket):
     try:
         while True:
             message = await ws.receive()
+            if message.get("type") == "websocket.disconnect":
+                break
 
             # Binary frame (JPEG)
             if "bytes" in message and message["bytes"]:
-                result = session.process_frame(message["bytes"])
+                result = await asyncio.to_thread(session.process_frame, message["bytes"])
                 await ws.send_json(result)
 
             # JSON buyruq
@@ -98,6 +119,8 @@ async def websocket_endpoint(ws: WebSocket):
                     text = str(data.get("text", "")).strip()
                     if not text:
                         await ws.send_json({"error": "Gapirtirish uchun matn bo'sh"})
+                    elif len(text) > 200:
+                        await ws.send_json({"error": "Matn juda uzun"})
                     else:
                         tts_engine.speak(text)
                         await ws.send_json({"status": "tts_started"})
@@ -110,6 +133,11 @@ async def websocket_endpoint(ws: WebSocket):
 
     except WebSocketDisconnect:
         logger.info("WebSocket uzildi.")
+    except RuntimeError as e:
+        if "disconnect" in str(e).lower():
+            logger.info("WebSocket uzildi.")
+        else:
+            logger.error("WebSocket runtime xatosi: %s", e)
     except Exception as e:
         logger.error("WebSocket xatosi: %s", e)
     finally:

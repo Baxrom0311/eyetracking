@@ -2,6 +2,8 @@ import numpy as np
 import logging
 from typing import Tuple, Optional
 from settings import (
+    CALIB_MAX_POINT_MEAN_ERR_RATIO,
+    CALIB_MAX_RMSE_RATIO,
     SMOOTHING_ALPHA,
     MOVE_THRESHOLD_PX,
     LINEAR_GAZE_X_MIN,
@@ -114,7 +116,25 @@ class GazeMapper:
             pred = np.asarray(model.predict(samples), dtype=float)
             span_x = float(np.ptp(pred[:, 0]))
             span_y = float(np.ptp(pred[:, 1]))
-            return span_x >= self.screen_w * 0.15 and span_y >= self.screen_h * 0.12
+            if span_x < self.screen_w * 0.15 or span_y < self.screen_h * 0.12:
+                return False
+
+            rmse_px = float(getattr(model, "rmse_px", 0.0) or 0.0)
+            if rmse_px and rmse_px > min(self.screen_w, self.screen_h) * CALIB_MAX_RMSE_RATIO:
+                logger.warning("GazeMapper: kalibrasiya RMSE juda katta: %.1fpx", rmse_px)
+                return False
+
+            point_error = float(getattr(model, "max_mean_error_px", 0.0) or 0.0)
+            if (
+                point_error
+                and point_error > min(self.screen_w, self.screen_h) * CALIB_MAX_POINT_MEAN_ERR_RATIO
+            ):
+                logger.warning(
+                    "GazeMapper: kalibrasiya nuqta xatosi juda katta: %.1fpx",
+                    point_error,
+                )
+                return False
+            return True
         except Exception as e:
             logger.warning("GazeMapper: kalibrasiya validatsiyasi yiqildi: %s", e)
             return False
@@ -157,6 +177,8 @@ class GazeMapper:
         Kalibrasiyasiz oddiy linear mapping.
         Relative gaze signal 0-1 oralig'ida bo'ladi.
         """
+        nx = float(np.clip(nx, LINEAR_GAZE_X_MIN, LINEAR_GAZE_X_MAX))
+        ny = float(np.clip(ny, LINEAR_GAZE_Y_MIN, LINEAR_GAZE_Y_MAX))
         sx = (nx - LINEAR_GAZE_X_MIN) / (LINEAR_GAZE_X_MAX - LINEAR_GAZE_X_MIN) * self.screen_w
         sy = (ny - LINEAR_GAZE_Y_MIN) / (LINEAR_GAZE_Y_MAX - LINEAR_GAZE_Y_MIN) * self.screen_h
         return sx, sy
