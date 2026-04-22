@@ -10,17 +10,20 @@ Run:
 
 from __future__ import annotations
 
+import argparse
 import logging
+import os
 import queue
 import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import cv2
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -32,6 +35,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QScrollArea,
     QSizePolicy,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -40,6 +44,8 @@ from calibration import CalibrationManager
 from camera import CameraError, CameraManager
 from face_tracker import FaceTracker
 from gaze_mapper import GazeMapper
+from app_meta import APP_NAME, APP_VERSION
+from app_paths import ensure_runtime_dirs, runtime_snapshot
 from settings import CAMERA_READ_FAIL_LIMIT, PREVIEW_MIRROR
 from tts_engine import TTSEngine
 
@@ -50,6 +56,7 @@ FRAME_INTERVAL = 1.0 / TARGET_PROCESS_FPS
 AAC_DWELL_SEC = 1.45
 AAC_ACTION_COOLDOWN_SEC = 1.10
 MAX_MESSAGE_WORDS = 14
+CALIBRATION_GRID_POSITIONS = [0.12, 0.50, 0.88]
 
 
 @dataclass(frozen=True)
@@ -289,6 +296,7 @@ class TrackingWorker(QThread):
                 "head_away": face_data.head_away,
                 "fps": round(camera.fps, 1),
                 "gaze": None,
+                "camera_frame": None,
                 "state": "IDLE",
                 "surface": {"w": mapper.screen_w, "h": mapper.screen_h},
                 "calibration": {
@@ -309,6 +317,9 @@ class TrackingWorker(QThread):
             if calibrating:
                 result["state"] = "CALIBRATING"
                 gaze_norm = face_data.gaze_norm if gaze_ready else None
+                if gaze_norm is not None:
+                    sx, sy = mapper.map(gaze_norm)
+                    result["gaze"] = [sx, sy]
                 is_blinking = face_data.left_blink or face_data.right_blink
                 done = calib_mgr.update(gaze_norm, is_blinking=is_blinking)
 
@@ -338,15 +349,16 @@ class TrackingWorker(QThread):
                     result["state"] = "NO_FACE"
                 elif face_data.head_away:
                     result["state"] = "HEAD_AWAY"
-                elif not calibration_done:
-                    result["state"] = "NEEDS_CALIBRATION"
                 elif gaze_ready:
                     sx, sy = mapper.map(face_data.gaze_norm)
-                    result["state"] = "TRACKING"
                     result["gaze"] = [sx, sy]
+                    result["state"] = "TRACKING" if calibration_done else "NEEDS_CALIBRATION"
+                elif not calibration_done:
+                    result["state"] = "NEEDS_CALIBRATION"
                 else:
                     result["state"] = "LOW_QUALITY"
 
+            result["camera_frame"] = tracker.draw_debug(frame.copy(), face_data)
             self.update.emit(result)
 
             elapsed = time.time() - loop_start
@@ -364,15 +376,23 @@ class GazeDot(QWidget):
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.setFixedSize(24, 24)
+        self.setFixedSize(34, 34)
         self.hide()
 
-    def paintEvent(self, event) -> None:  # noqa: N802
+    def paintEvent(self, event) -> None:  
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(QPen(QColor(245, 197, 66, 120), 4))
+        painter.setPen(QPen(QColor(245, 197, 66, 150), 3))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawEllipse(4, 4, 26, 26)
+        painter.setPen(QPen(QColor(245, 197, 66, 230), 2))
+        painter.drawLine(17, 2, 17, 11)
+        painter.drawLine(17, 23, 17, 32)
+        painter.drawLine(2, 17, 11, 17)
+        painter.drawLine(23, 17, 32, 17)
+        painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(245, 197, 66))
-        painter.drawEllipse(5, 5, 14, 14)
+        painter.drawEllipse(12, 12, 10, 10)
 
 
 class CalibrationOverlay(QWidget):
@@ -424,6 +444,117 @@ class CalibrationOverlay(QWidget):
         )
 
 
+class CalibrationSurface(QWidget):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._calibration: dict[str, Any] = {}
+        self._surface = {"w": 1, "h": 1}
+        self._gaze: list[int] | None = None
+        self._state = "IDLE"
+        self.setMinimumHeight(420)
+
+    def set_data(
+        self,
+        calibration: dict[str, Any],
+        surface: dict[str, Any],
+        gaze: list[int] | None,
+        state: str,
+    ) -> None:
+        self._calibration = calibration or {}
+        self._surface = surface or {"w": 1, "h": 1}
+        self._gaze = gaze
+        self._state = state
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.fillRect(self.rect(), QColor("#111315"))
+
+        inner = self.rect().adjusted(18, 18, -18, -18)
+        painter.setPen(QPen(QColor("#2b3136"), 1))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(inner, 12, 12)
+
+        points = self._grid_points(inner)
+        calibration_active = bool(self._calibration.get("active"))
+        calibration_done = bool(self._calibration.get("done"))
+        current_index = max(0, int(self._calibration.get("current") or 1) - 1)
+        progress = float(self._calibration.get("progress") or 0.0)
+
+        for index, point in enumerate(points):
+            if calibration_done and not calibration_active:
+                painter.setBrush(QColor(0, 190, 120))
+                painter.setPen(Qt.NoPen)
+                painter.drawEllipse(point, 8, 8)
+                continue
+
+            if calibration_active and index < current_index:
+                painter.setBrush(QColor(120, 125, 132))
+                painter.setPen(Qt.NoPen)
+                painter.drawEllipse(point, 7, 7)
+                continue
+
+            if calibration_active and index == current_index:
+                painter.setPen(QPen(QColor(0, 220, 130), 4))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawArc(QRect(point.x() - 30, point.y() - 30, 60, 60), 90 * 16, int(-360 * progress * 16))
+                painter.setPen(QPen(QColor(255, 255, 255, 90), 2))
+                painter.drawEllipse(point, 24, 24)
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor(0, 220, 130))
+                painter.drawEllipse(point, 8, 8)
+                continue
+
+            painter.setPen(QPen(QColor("#4b555d"), 1))
+            painter.setBrush(QColor("#242a2f"))
+            painter.drawEllipse(point, 6, 6)
+
+        if self._gaze:
+            gx, gy = self._map_surface_point(self._gaze[0], self._gaze[1], inner)
+            gaze_point = QPoint(gx, gy)
+            painter.setPen(QPen(QColor(245, 197, 66, 150), 3))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawEllipse(gaze_point, 14, 14)
+            painter.drawLine(gx, gy - 18, gx, gy - 6)
+            painter.drawLine(gx, gy + 6, gx, gy + 18)
+            painter.drawLine(gx - 18, gy, gx - 6, gy)
+            painter.drawLine(gx + 6, gy, gx + 18, gy)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(245, 197, 66))
+            painter.drawEllipse(gaze_point, 4, 4)
+
+        painter.setPen(QColor("#f6f1e8"))
+        painter.setFont(QFont("Arial", 12, QFont.Bold))
+        if calibration_active:
+            current = int(self._calibration.get("current") or 0)
+            total = int(self._calibration.get("total") or 0)
+            text = f"Nuqta {current}/{total}"
+        elif calibration_done:
+            text = "Kalibratsiya tayyor"
+        elif self._state == "NEEDS_CALIBRATION":
+            text = "Kursorga qarab markazlarni tekshiring"
+        else:
+            text = "Kalibratsiyani boshlashga tayyor"
+        painter.drawText(inner.adjusted(12, 12, -12, -12), Qt.AlignTop | Qt.AlignLeft, text)
+
+    def _grid_points(self, rect: QRect) -> list[QPoint]:
+        points: list[QPoint] = []
+        for row in CALIBRATION_GRID_POSITIONS:
+            for col in CALIBRATION_GRID_POSITIONS:
+                x = rect.left() + int(rect.width() * col)
+                y = rect.top() + int(rect.height() * row)
+                points.append(QPoint(x, y))
+        return points
+
+    def _map_surface_point(self, x: int, y: int, rect: QRect) -> tuple[int, int]:
+        sw = max(1, int(self._surface.get("w") or self.width()))
+        sh = max(1, int(self._surface.get("h") or self.height()))
+        px = rect.left() + int((x / sw) * rect.width())
+        py = rect.top() + int((y / sh) * rect.height())
+        return px, py
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -439,6 +570,8 @@ class MainWindow(QMainWindow):
         self._board_columns = 4
         self._support_columns = 2
         self._metrics: dict[str, int] = {}
+        self._mode = "communication"
+        self._last_camera_frame = None
 
         self.worker = TrackingWorker()
         self.worker.update.connect(self.handle_tracking_update)
@@ -453,6 +586,7 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self.render_all()
+        self.set_mode("communication")
         self._apply_responsive_layout(force=True)
 
         self.worker.start()
@@ -474,11 +608,11 @@ class MainWindow(QMainWindow):
 
         self.calibrate_btn = self._new_button("Kalibratsiya", "control")
         self.recalibrate_btn = self._new_button("Qayta kalibratsiya", "control")
-        self.fullscreen_btn = self._new_button("Fullscreen", "control")
+        self.fullscreen_btn = self._new_button("To'liq ekran", "control")
 
         self._mark_target(self.calibrate_btn, "calibrate", "Kalibratsiya")
         self._mark_target(self.recalibrate_btn, "calibrate", "Qayta kalibratsiya")
-        self._mark_target(self.fullscreen_btn, "fullscreen", "Fullscreen")
+        self._mark_target(self.fullscreen_btn, "fullscreen", "To'liq ekran")
 
         self.calibrate_btn.clicked.connect(self.start_calibration)
         self.recalibrate_btn.clicked.connect(self.start_calibration)
@@ -493,6 +627,23 @@ class MainWindow(QMainWindow):
         self.header_layout.addWidget(self.fullscreen_btn)
         self.root_layout.addLayout(self.header_layout)
 
+        self.mode_nav = QHBoxLayout()
+        self.mode_nav.setSpacing(10)
+        self.mode_buttons: dict[str, QPushButton] = {}
+        for mode, label in [
+            ("communication", "Bosh sahifa"),
+            ("calibration", "Kalibratsiya"),
+            ("camera", "Kamera"),
+        ]:
+            button = self._new_button(label, "mode")
+            button.setCheckable(True)
+            self._mark_target(button, "mode", label, mode)
+            button.clicked.connect(lambda checked=False, value=mode: self.set_mode(value))
+            self.mode_buttons[mode] = button
+            self.mode_nav.addWidget(button)
+        self.mode_nav.addStretch(1)
+        self.root_layout.addLayout(self.mode_nav)
+
         self.body_layout = QHBoxLayout()
         self.body_layout.setSpacing(14)
         self.root_layout.addLayout(self.body_layout, 1)
@@ -506,22 +657,26 @@ class MainWindow(QMainWindow):
         self.message_label = QLabel("Tanlangan so'zlar shu yerda yig'iladi")
         self.message_label.setObjectName("message")
         self.message_label.setWordWrap(True)
+        self.message_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self.left_layout.addWidget(self.message_label)
 
         self.actions_layout = QHBoxLayout()
         self.backspace_btn = self._new_button("Orqaga", "control")
         self.clear_btn = self._new_button("Tozalash", "control")
         self.speak_btn = self._new_button("Gapirtirish", "control")
+        self.camera_toggle_btn = self._new_button("Kamera", "control")
         for button, action, label in [
             (self.backspace_btn, "backspace", "Orqaga"),
             (self.clear_btn, "clear", "Tozalash"),
             (self.speak_btn, "speak", "Gapirtirish"),
+            (self.camera_toggle_btn, "camera", "Kamera"),
         ]:
             self._mark_target(button, action, label)
             self.actions_layout.addWidget(button)
         self.backspace_btn.clicked.connect(self.backspace)
         self.clear_btn.clicked.connect(self.clear_message)
         self.speak_btn.clicked.connect(self.speak_message)
+        self.camera_toggle_btn.clicked.connect(self.toggle_camera_mode)
         self.left_layout.addLayout(self.actions_layout)
 
         self.focus_label = QLabel("Nishon: -")
@@ -532,50 +687,132 @@ class MainWindow(QMainWindow):
         self.left_layout.addWidget(self.focus_label)
         self.left_layout.addWidget(self.dwell_bar)
 
-        self.prediction_frame = self._section("Prediction")
+        self.prediction_frame = self._section("Takliflar")
         self.quick_frame = self._section("Tez javoblar")
-        self.emergency_frame = self._section("Emergency")
-        self.phrase_frame = self._section("Phrase bank")
-        self.left_layout.addWidget(self.prediction_frame)
-        self.left_layout.addWidget(self.quick_frame)
-        self.left_layout.addWidget(self.emergency_frame)
-        self.left_layout.addWidget(self.phrase_frame)
-        self.left_layout.addStretch(1)
+        self.emergency_frame = self._section("Favqulodda")
+        self.phrase_frame = self._section("Iboralar")
+        self.support_scroll = QScrollArea()
+        self.support_scroll.setWidgetResizable(True)
+        self.support_scroll.setFrameShape(QFrame.NoFrame)
+        self.support_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.support_content = QWidget()
+        self.support_content.setObjectName("supportCanvas")
+        self.support_layout = QVBoxLayout(self.support_content)
+        self.support_layout.setContentsMargins(0, 0, 0, 0)
+        self.support_layout.addWidget(self.prediction_frame)
+        self.support_layout.addWidget(self.quick_frame)
+        self.support_layout.addWidget(self.emergency_frame)
+        self.support_layout.addWidget(self.phrase_frame)
+        self.support_layout.addStretch(1)
+        self.support_scroll.setWidget(self.support_content)
+        self.left_layout.addWidget(self.support_scroll, 1)
 
         self.right_panel = QFrame()
         self.right_panel.setObjectName("panel")
-        self.right_layout = QHBoxLayout(self.right_panel)
+        self.right_layout = QVBoxLayout(self.right_panel)
         self.right_layout.setContentsMargins(16, 16, 16, 16)
         self.right_layout.setSpacing(14)
 
-        self.page_nav = QVBoxLayout()
-        self.page_nav.setSpacing(10)
-        self.right_layout.addLayout(self.page_nav, 0)
+        self.right_stack = QStackedWidget()
+        self.right_stack.setObjectName("viewStack")
+        self.right_layout.addWidget(self.right_stack, 1)
 
-        self.board_area = QVBoxLayout()
+        self.communication_page = QWidget()
+        self.communication_layout = QVBoxLayout(self.communication_page)
+        self.communication_layout.setContentsMargins(0, 0, 0, 0)
+        self.communication_layout.setSpacing(12)
+        self.page_nav = QHBoxLayout()
+        self.page_nav.setSpacing(10)
+        self.communication_layout.addLayout(self.page_nav, 0)
+
+        self.board_header = QVBoxLayout()
         self.board_title = QLabel("")
         self.board_title.setObjectName("boardTitle")
         self.board_title.setWordWrap(True)
         self.board_note = QLabel("")
         self.board_note.setObjectName("muted")
         self.board_note.setWordWrap(True)
+        self.board_header.addWidget(self.board_title)
+        self.board_header.addWidget(self.board_note)
+        self.communication_layout.addLayout(self.board_header, 0)
+
+        self.board_scroll = QScrollArea()
+        self.board_scroll.setWidgetResizable(True)
+        self.board_scroll.setFrameShape(QFrame.NoFrame)
+        self.board_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.board_content = QWidget()
+        self.board_content.setObjectName("boardCanvas")
+        self.board_area = QVBoxLayout(self.board_content)
+        self.board_area.setContentsMargins(0, 0, 0, 0)
+        self.board_area.setSpacing(12)
         self.grid = QGridLayout()
         self.grid.setSpacing(12)
-        self.board_area.addWidget(self.board_title)
-        self.board_area.addWidget(self.board_note)
-        self.board_area.addLayout(self.grid, 1)
-        self.right_layout.addLayout(self.board_area, 1)
+        self.grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.board_area.addLayout(self.grid, 0)
+        self.board_area.addStretch(1)
+        self.board_scroll.setWidget(self.board_content)
+        self.communication_layout.addWidget(self.board_scroll, 1)
+        self.right_stack.addWidget(self.communication_page)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        content = QWidget()
-        self.content_layout = QHBoxLayout(content)
-        self.content_layout.setContentsMargins(0, 0, 0, 0)
-        self.content_layout.addWidget(self.left_panel, 0)
-        self.content_layout.addWidget(self.right_panel, 1)
-        scroll.setWidget(content)
-        self.body_layout.addWidget(scroll, 1)
+        self.calibration_page = QWidget()
+        self.calibration_page.setObjectName("toolPage")
+        self.calibration_layout = QVBoxLayout(self.calibration_page)
+        self.calibration_layout.setContentsMargins(0, 0, 0, 0)
+        self.calibration_layout.setSpacing(12)
+        self.calibration_title = QLabel("Kalibratsiya")
+        self.calibration_title.setObjectName("boardTitle")
+        self.calibration_note = QLabel("9 nuqtaga ketma-ket qarang. Sariq marker sizning hozirgi ko'z yo'nalishingizni ko'rsatadi.")
+        self.calibration_note.setObjectName("muted")
+        self.calibration_note.setWordWrap(True)
+        self.calibration_layout.addWidget(self.calibration_title)
+        self.calibration_layout.addWidget(self.calibration_note)
+        self.calibration_actions = QHBoxLayout()
+        self.calibration_start_btn = self._new_button("Kalibratsiyani boshlash", "control")
+        self.calibration_reset_btn = self._new_button("Qayta boshlash", "control")
+        self._mark_target(self.calibration_start_btn, "calibrate", "Kalibratsiyani boshlash")
+        self._mark_target(self.calibration_reset_btn, "calibrate", "Qayta boshlash")
+        self.calibration_start_btn.clicked.connect(self.start_calibration)
+        self.calibration_reset_btn.clicked.connect(self.start_calibration)
+        self.calibration_actions.addWidget(self.calibration_start_btn)
+        self.calibration_actions.addWidget(self.calibration_reset_btn)
+        self.calibration_actions.addStretch(1)
+        self.calibration_layout.addLayout(self.calibration_actions)
+        self.calibration_status = QLabel("Kalibratsiya hali ishga tushmagan")
+        self.calibration_status.setObjectName("focus")
+        self.calibration_layout.addWidget(self.calibration_status)
+        self.calibration_surface = CalibrationSurface()
+        self.calibration_surface.setObjectName("calibrationSurface")
+        self.calibration_layout.addWidget(self.calibration_surface, 1)
+        self.right_stack.addWidget(self.calibration_page)
+
+        self.camera_page = QWidget()
+        self.camera_page.setObjectName("toolPage")
+        self.camera_layout = QVBoxLayout(self.camera_page)
+        self.camera_layout.setContentsMargins(0, 0, 0, 0)
+        self.camera_layout.setSpacing(12)
+        self.camera_title = QLabel("Kamera va landmarklar")
+        self.camera_title.setObjectName("boardTitle")
+        self.camera_note = QLabel("Bu sahifa tashrif buyuruvchilar uchun: MediaPipe yuz landmarklari, iris aylanalari va ishlatilayotgan nuqtalar shu yerda ko'rinadi.")
+        self.camera_note.setObjectName("muted")
+        self.camera_note.setWordWrap(True)
+        self.camera_layout.addWidget(self.camera_title)
+        self.camera_layout.addWidget(self.camera_note)
+        self.camera_status = QLabel("Kamera oqimi kutilmoqda")
+        self.camera_status.setObjectName("focus")
+        self.camera_layout.addWidget(self.camera_status)
+        self.camera_preview = QLabel("Kamera oqimi yo'q")
+        self.camera_preview.setObjectName("cameraPreview")
+        self.camera_preview.setAlignment(Qt.AlignCenter)
+        self.camera_preview.setMinimumHeight(420)
+        self.camera_layout.addWidget(self.camera_preview, 1)
+        self.camera_legend = QLabel("Yashil nuqtalar: landmarklar. Yashil doira: iris. Pastdagi yozuv: EAR, bosh og'ishi va gaze koordinatalari.")
+        self.camera_legend.setObjectName("muted")
+        self.camera_legend.setWordWrap(True)
+        self.camera_layout.addWidget(self.camera_legend)
+        self.right_stack.addWidget(self.camera_page)
+
+        self.body_layout.addWidget(self.left_panel, 0)
+        self.body_layout.addWidget(self.right_panel, 1)
 
     def _section(self, title: str) -> QFrame:
         frame = QFrame()
@@ -611,10 +848,9 @@ class MainWindow(QMainWindow):
         width = max(self.root.width(), self.width(), 960)
         height = max(self.root.height(), self.height(), 680)
         short_side = min(width, height)
-        left_width = max(self.left_panel.width(), width // 3)
-        nav_width = self._clamp(width * 0.13, 120, 168)
-        board_width = max(self.right_panel.width() - nav_width - 40, width // 2)
-        board_columns = 4 if board_width >= 860 else 3 if board_width >= 620 else 2
+        left_width = self._clamp(width * 0.28, 320, 400)
+        board_width = max(width - left_width - self._clamp(short_side * 0.04, 24, 48), width // 2)
+        board_columns = 3 if board_width >= 760 else 2
         support_columns = 2 if left_width >= 320 else 1
 
         return {
@@ -636,11 +872,10 @@ class MainWindow(QMainWindow):
             "control_h": self._clamp(height * 0.054, 38, 48),
             "compact_h": self._clamp(height * 0.060, 42, 58),
             "nav_h": self._clamp(height * 0.068, 44, 64),
-            "tile_h": self._clamp(height * 0.120, 88, 122),
-            "tile_max_h": self._clamp(height * 0.150, 112, 150),
+            "tile_h": self._clamp(height * 0.132, 96, 132),
+            "tile_max_h": self._clamp(height * 0.170, 124, 164),
             "pill_h": self._clamp(height * 0.048, 34, 42),
             "progress_h": self._clamp(short_side * 0.008, 8, 10),
-            "nav_width": nav_width,
             "board_columns": board_columns,
             "support_columns": support_columns,
         }
@@ -661,9 +896,20 @@ class MainWindow(QMainWindow):
                 background: #1e2225; border: 1px solid #343a40;
                 border-radius: 8px;
             }}
+            #toolPage, #viewStack {{
+                background: transparent;
+            }}
             #subPanel {{
                 background: #252a2e; border: 1px solid #373e44;
                 border-radius: 8px;
+            }}
+            #supportCanvas, #boardCanvas {{
+                background: transparent;
+            }}
+            #cameraPreview, #calibrationSurface {{
+                background: #111315;
+                border: 1px solid #343a40;
+                border-radius: 10px;
             }}
             #message {{
                 min-height: {m["message_min_h"]}px;
@@ -682,6 +928,18 @@ class MainWindow(QMainWindow):
                 font-size: {m["button_font"]}px; font-weight: 800;
             }}
             QPushButton:hover {{ background: #3a4249; }}
+            QPushButton[uiRole="nav"] {{
+                background: #272d31; color: #d6cec1;
+            }}
+            QPushButton[uiRole="nav"]:checked {{
+                background: #f0ebe1; color: #121416; border-color: #f0ebe1;
+            }}
+            QPushButton[uiRole="mode"] {{
+                background: #272d31; color: #d6cec1;
+            }}
+            QPushButton[uiRole="mode"]:checked {{
+                background: #f0ebe1; color: #121416; border-color: #f0ebe1;
+            }}
             QPushButton[gazeActive="true"] {{
                 border: 3px solid #f5c542; background: #40391e;
             }}
@@ -694,6 +952,26 @@ class MainWindow(QMainWindow):
             QPushButton[tone="slate"] {{ background: #c7d0dc; color: #1b2431; }}
             QPushButton[tone="lime"] {{ background: #bfdd79; color: #243011; }}
             QPushButton[tone="danger"] {{ background: #ff7162; color: #2e0a09; }}
+            QScrollArea {{
+                background: transparent;
+                border: 0;
+            }}
+            QScrollArea > QWidget > QWidget {{
+                background: transparent;
+            }}
+            QScrollBar:vertical {{
+                width: 10px; margin: 2px 0 2px 0;
+                background: #1d2125; border-radius: 5px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: #56616b; min-height: 26px; border-radius: 5px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: transparent;
+            }}
             QProgressBar {{
                 min-height: {m["progress_h"]}px; max-height: {m["progress_h"]}px;
                 border-radius: {max(4, m["progress_h"] // 2)}px;
@@ -718,26 +996,35 @@ class MainWindow(QMainWindow):
         gap = metrics["gap"]
         tight_gap = metrics["tight_gap"]
         sub_pad = metrics["subpanel_pad"]
-        left_min = self._clamp(self.root.width() * 0.24, 260, 340)
-        left_max = self._clamp(self.root.width() * 0.34, 320, 430)
-        right_min = self._clamp(self.root.width() * 0.48, 420, 780)
+        left_min = self._clamp(self.root.width() * 0.23, 270, 350)
+        left_max = self._clamp(self.root.width() * 0.31, 340, 420)
+        right_min = self._clamp(self.root.width() * 0.56, 540, 980)
 
         self.root_layout.setContentsMargins(metrics["outer_margin"], metrics["outer_margin"], metrics["outer_margin"], metrics["outer_margin"])
         self.root_layout.setSpacing(gap)
         self.header_layout.setSpacing(tight_gap)
+        self.mode_nav.setSpacing(tight_gap)
         self.body_layout.setSpacing(gap)
         self.left_layout.setContentsMargins(pad, pad, pad, pad)
         self.left_layout.setSpacing(gap)
         self.right_layout.setContentsMargins(pad, pad, pad, pad)
         self.right_layout.setSpacing(gap)
         self.actions_layout.setSpacing(tight_gap)
+        self.communication_layout.setSpacing(gap)
+        self.calibration_layout.setSpacing(gap)
+        self.camera_layout.setSpacing(gap)
+        self.calibration_actions.setSpacing(tight_gap)
         self.page_nav.setSpacing(tight_gap)
+        self.board_header.setSpacing(max(2, tight_gap // 2))
         self.board_area.setSpacing(tight_gap)
         self.grid.setHorizontalSpacing(gap)
         self.grid.setVerticalSpacing(gap)
+        self.support_layout.setSpacing(gap)
         self.left_panel.setMinimumWidth(left_min)
         self.left_panel.setMaximumWidth(left_max)
         self.right_panel.setMinimumWidth(right_min)
+        self.body_layout.setStretch(0, 0)
+        self.body_layout.setStretch(1, 1)
 
         for frame, grid in self._section_grids.items():
             layout = frame.layout()
@@ -759,7 +1046,40 @@ class MainWindow(QMainWindow):
         self.render_support_panels()
         self.render_page_nav()
         self.render_board()
+        self._sync_mode_controls()
         self.update_message()
+
+    def set_mode(self, mode: str) -> None:
+        if mode not in {"communication", "calibration", "camera"}:
+            return
+        self._mode = mode
+        self.left_panel.setVisible(mode != "calibration")
+        if mode == "communication":
+            self.right_stack.setCurrentWidget(self.communication_page)
+        elif mode == "calibration":
+            self.right_stack.setCurrentWidget(self.calibration_page)
+        else:
+            self.right_stack.setCurrentWidget(self.camera_page)
+        self._sync_mode_controls()
+        self._apply_responsive_layout()
+        self.clear_gaze_target()
+        QTimer.singleShot(0, self.sync_surface_size)
+
+    def toggle_camera_mode(self) -> None:
+        self.set_mode("communication" if self._mode == "camera" else "camera")
+
+    def _sync_mode_controls(self) -> None:
+        for mode, button in self.mode_buttons.items():
+            checked = mode == self._mode
+            if button.isChecked() != checked:
+                button.setChecked(checked)
+        label = "Muloqot" if self._mode == "camera" else "Kamera"
+        target_mode = "communication" if self._mode == "camera" else "camera"
+        self.camera_toggle_btn.setProperty("rawText", label)
+        self.camera_toggle_btn.setProperty("gazeLabel", label)
+        self.camera_toggle_btn.setProperty("gazeValue", target_mode)
+        self.camera_toggle_btn.setText(label)
+        self._sync_button_views()
 
     def render_support_panels(self) -> None:
         self._fill_button_grid(self.prediction_frame, self.predictions(), "suggestion")
@@ -850,6 +1170,10 @@ class MainWindow(QMainWindow):
             self.clear_gaze_target()
             self.render_page_nav()
             self.render_board()
+        elif action == "mode":
+            self.set_mode(value)
+        elif action == "camera":
+            self.toggle_camera_mode()
         elif action == "backspace":
             self.backspace()
         elif action == "clear":
@@ -892,11 +1216,10 @@ class MainWindow(QMainWindow):
             self.worker.speak(" ".join(self._words))
 
     def start_calibration(self) -> None:
+        self.set_mode("calibration")
         self.sync_surface_size()
         self.worker.start_calibration(self.root.width(), self.root.height())
-        self.calibration_overlay.setGeometry(self.root.rect())
-        self.calibration_overlay.show()
-        self.calibration_overlay.raise_()
+        self.calibration_overlay.hide()
 
     def handle_tracking_update(self, data: dict[str, Any]) -> None:
         state = data.get("state", "IDLE")
@@ -904,29 +1227,40 @@ class MainWindow(QMainWindow):
         self.status_label.setText(self._state_label(state))
 
         calibration = data.get("calibration") or {}
-        if calibration.get("active"):
-            self.calibration_overlay.setGeometry(self.root.rect())
-            self.calibration_overlay.set_data(calibration, data.get("surface") or {})
-            self.calibration_overlay.show()
-            self.calibration_overlay.raise_()
-        elif self.calibration_overlay.isVisible():
+        self.calibration_surface.set_data(
+            calibration,
+            data.get("surface") or {},
+            data.get("gaze"),
+            state,
+        )
+        self._update_calibration_page(state, calibration)
+        self._update_camera_page(data)
+        if self.calibration_overlay.isVisible():
             self.calibration_overlay.hide()
 
         gaze = data.get("gaze")
-        if state == "TRACKING" and gaze:
+        if gaze:
             surface = data.get("surface") or {}
             width = max(1, int(surface.get("w") or self.root.width()))
             height = max(1, int(surface.get("h") or self.root.height()))
             x = int(gaze[0] / width * self.root.width())
             y = int(gaze[1] / height * self.root.height())
             self.move_gaze_dot(x, y)
-            self.update_gaze_selection(x, y)
+            if state == "TRACKING":
+                self.update_gaze_selection(x, y)
+            else:
+                self.clear_gaze_target()
+                if state == "NEEDS_CALIBRATION":
+                    self.focus_label.setText("Nishon: ko'z kursori tayyor")
         else:
             self.gaze_dot.hide()
             self.clear_gaze_target()
+            self.focus_label.setText("Nishon: -")
 
     def move_gaze_dot(self, x: int, y: int) -> None:
-        self.gaze_dot.move(max(0, x - 12), max(0, y - 12))
+        radius_x = self.gaze_dot.width() // 2
+        radius_y = self.gaze_dot.height() // 2
+        self.gaze_dot.move(max(0, x - radius_x), max(0, y - radius_y))
         self.gaze_dot.show()
         self.gaze_dot.raise_()
 
@@ -980,16 +1314,57 @@ class MainWindow(QMainWindow):
         button.style().unpolish(button)
         button.style().polish(button)
 
+    def _update_calibration_page(self, state: str, calibration: dict[str, Any]) -> None:
+        if calibration.get("active"):
+            current = int(calibration.get("current") or 0)
+            total = int(calibration.get("total") or 0)
+            progress = int(float(calibration.get("progress") or 0.0) * 100)
+            self.calibration_status.setText(f"Nuqta {current}/{total}  •  {progress}%")
+        elif calibration.get("done") or state == "CALIBRATION_DONE":
+            self.calibration_status.setText("Kalibratsiya tayyor")
+        elif state == "CALIBRATION_FAILED":
+            self.calibration_status.setText("Kalibratsiya tugamadi")
+        elif state == "NEEDS_CALIBRATION":
+            self.calibration_status.setText("Kursor ko'rinadi, aniqlik uchun kalibratsiya qiling")
+        else:
+            self.calibration_status.setText(self._state_label(state))
+
+    def _update_camera_page(self, data: dict[str, Any]) -> None:
+        frame = data.get("camera_frame")
+        if frame is not None:
+            self._last_camera_frame = frame
+            self._set_camera_frame(frame)
+        state = self._state_label(data.get("state", "IDLE"))
+        fps = data.get("fps", 0)
+        self.camera_status.setText(f"{state}  •  {fps} FPS")
+
+    def _set_camera_frame(self, frame) -> None:
+        if frame is None:
+            return
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        h, w = rgb.shape[:2]
+        image = QImage(rgb.data, w, h, rgb.strides[0], QImage.Format_RGB888).copy()
+        pixmap = QPixmap.fromImage(image)
+        target = self.camera_preview.size()
+        if target.width() > 0 and target.height() > 0:
+            pixmap = pixmap.scaled(target, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.camera_preview.setPixmap(pixmap)
+        self.camera_preview.setText("")
+
     def show_fatal_error(self, message: str) -> None:
         self.status_label.setText(f"Xato: {message}")
 
     def toggle_fullscreen(self) -> None:
         if self.isFullScreen():
             self.showNormal()
-            self.fullscreen_btn.setText("Fullscreen")
+            label = "To'liq ekran"
         else:
             self.showFullScreen()
-            self.fullscreen_btn.setText("Window")
+            label = "Oyna"
+        self.fullscreen_btn.setProperty("rawText", label)
+        self.fullscreen_btn.setProperty("gazeLabel", label)
+        self.fullscreen_btn.setText(label)
+        self._sync_button_views()
         QTimer.singleShot(120, self.sync_surface_size)
 
     def sync_surface_size(self) -> None:
@@ -1004,6 +1379,8 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         self.calibration_overlay.setGeometry(self.root.rect())
         self._apply_responsive_layout()
+        if self._last_camera_frame is not None:
+            self._set_camera_frame(self._last_camera_frame)
         QTimer.singleShot(60, self.sync_surface_size)
 
     def closeEvent(self, event) -> None:  # noqa: N802
@@ -1041,11 +1418,14 @@ class MainWindow(QMainWindow):
                 button.setMinimumHeight(m["tile_h"])
                 button.setMaximumHeight(m["tile_max_h"])
                 button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            elif role == "mode":
+                button.setMinimumHeight(m["control_h"])
+                button.setMaximumHeight(m["control_h"] + 18)
+                button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             elif role == "nav":
                 button.setMinimumHeight(m["nav_h"])
                 button.setMaximumHeight(m["nav_h"] + 24)
-                button.setMaximumWidth(m["nav_width"])
-                button.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+                button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             elif role == "compact":
                 button.setMinimumHeight(m["compact_h"])
                 button.setMaximumHeight(m["compact_h"] + 24)
@@ -1073,21 +1453,41 @@ class MainWindow(QMainWindow):
 
             role = str(button.property("uiRole") or "control")
             current_width = max(72, button.contentsRect().width() - (self._metrics["button_px"] * 2))
+            nav_width = max(
+                110,
+                (
+                    max(self.right_panel.width(), self.right_panel.minimumWidth())
+                    - self._metrics["gap"] * max(0, len(PATIENT_PAGES) - 1)
+                    - self._metrics["button_px"] * 2 * len(PATIENT_PAGES)
+                ) // max(1, len(PATIENT_PAGES)),
+            )
             compact_width = max(
                 96,
                 ((max(self.left_panel.width(), self.left_panel.minimumWidth()) - self._metrics["gap"] * max(0, self._support_columns - 1)) // max(1, self._support_columns))
                 - self._metrics["button_px"] * 2
                 - 12,
             )
+            mode_width = max(
+                108,
+                (
+                    max(self.root.width(), self.width())
+                    - self._metrics["outer_margin"] * 2
+                    - self._metrics["gap"] * max(0, len(self.mode_buttons) - 1)
+                ) // max(1, len(self.mode_buttons))
+                - self._metrics["button_px"] * 2
+                - 12,
+            )
             tile_width = max(
                 120,
-                ((max(self.right_panel.width(), self.right_panel.minimumWidth()) - self._metrics["nav_width"] - self._metrics["gap"] * (self._board_columns + 1)) // max(1, self._board_columns))
+                ((max(self.right_panel.width(), self.right_panel.minimumWidth()) - self._metrics["gap"] * max(0, self._board_columns - 1)) // max(1, self._board_columns))
                 - self._metrics["button_px"] * 2
                 - 12,
             )
 
-            if role == "nav":
-                content_width = max(96, self._metrics["nav_width"] - (self._metrics["button_px"] * 2) - 10)
+            if role == "mode":
+                content_width = min(current_width, mode_width)
+            elif role == "nav":
+                content_width = min(current_width, nav_width)
             elif role == "tile":
                 content_width = min(current_width, tile_width)
             elif role == "compact":
@@ -1105,6 +1505,11 @@ class MainWindow(QMainWindow):
                 height = min(
                     self._metrics["tile_max_h"],
                     max(self._metrics["tile_h"], self._metrics["tile_h"] + max(0, line_count - 2) * line_step),
+                )
+            elif role == "mode":
+                height = min(
+                    self._metrics["control_h"] + 18,
+                    self._metrics["control_h"] + max(0, line_count - 1) * line_step,
                 )
             elif role == "nav":
                 height = min(self._metrics["nav_h"] + 24, self._metrics["nav_h"] + max(0, line_count - 1) * line_step)
@@ -1169,21 +1574,99 @@ class MainWindow(QMainWindow):
             widget = item.widget()
             child_layout = item.layout()
             if widget is not None:
+                widget.hide()
+                widget.setParent(None)
                 widget.deleteLater()
             elif child_layout is not None:
                 MainWindow._clear_layout(child_layout)
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--self-check", action="store_true")
+    parser.add_argument("--version", action="store_true")
+    args, qt_args = parser.parse_known_args(sys.argv[1:])
+
+    if args.version:
+        print(APP_VERSION)
+        return 0
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    app = QApplication(sys.argv)
-    app.setApplicationName("GazeSpeak Desktop")
+
+    if args.self_check:
+        return run_self_check()
+
+    ensure_runtime_dirs()
+    app = QApplication([sys.argv[0], *qt_args])
+    app.setApplicationName(APP_NAME)
     window = MainWindow()
     window.show()
     return app.exec()
+
+
+def run_self_check() -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    ensure_runtime_dirs()
+
+    try:
+        import edge_tts
+        import mediapipe as mp
+    except Exception as exc:
+        print(f"SELF-CHECK FAIL: import error: {exc}")
+        return 1
+
+    app = QApplication([APP_NAME, "-platform", "offscreen"])
+    app.setApplicationName(APP_NAME)
+
+    errors: list[str] = []
+    warnings: list[str] = []
+    tracker: FaceTracker | None = None
+    strict_tracker_check = str(os.getenv("GAZESPEAK_SELF_CHECK_TRACKER", "")).strip().lower() in {"1", "true", "yes", "on"}
+
+    model_path = Path(runtime_snapshot()["active_model"])
+    if not model_path.exists():
+        errors.append(f"model missing: {model_path}")
+
+    try:
+        tracker = FaceTracker(enable_blendshapes=False)
+    except Exception as exc:
+        message = f"FaceTracker init failed: {exc}"
+        if strict_tracker_check:
+            errors.append(message)
+        else:
+            warnings.append(message)
+
+    try:
+        import pyttsx3  # noqa: F401
+    except Exception as exc:
+        warnings.append(f"pyttsx3 unavailable: {exc}")
+
+    print(f"SELF-CHECK APP={APP_NAME} VERSION={APP_VERSION}")
+    print(f"SELF-CHECK OPENCV={cv2.__version__}")
+    print(f"SELF-CHECK MEDIAPIPE={mp.__version__}")
+    print(f"SELF-CHECK EDGE_TTS={getattr(edge_tts, '__version__', 'unknown')}")
+    for key, value in runtime_snapshot().items():
+        print(f"SELF-CHECK PATH {key}={value}")
+    for warning in warnings:
+        print(f"SELF-CHECK WARN: {warning}")
+
+    if tracker is not None:
+        tracker.close()
+    app.quit()
+
+    if errors:
+        for item in errors:
+            print(f"SELF-CHECK FAIL: {item}")
+        return 1
+
+    print("SELF-CHECK OK")
+    return 0
 
 
 if __name__ == "__main__":

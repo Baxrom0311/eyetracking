@@ -6,6 +6,7 @@ import queue
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -75,6 +76,40 @@ class TTSEngine:
             if shutil.which(binary):
                 return command
         return None
+
+    def _play_audio_file_windows(self, audio_path: Path) -> None:
+        powershell = shutil.which("powershell.exe") or shutil.which("powershell") or shutil.which("pwsh")
+        if not powershell:
+            raise RuntimeError("Windows audio playback uchun PowerShell topilmadi")
+
+        script = (
+            "Add-Type -AssemblyName presentationCore; "
+            "$path = [System.IO.Path]::GetFullPath($args[0]); "
+            "$player = New-Object System.Windows.Media.MediaPlayer; "
+            "$player.Open((New-Object System.Uri($path))); "
+            "while (-not $player.NaturalDuration.HasTimeSpan) { Start-Sleep -Milliseconds 100 }; "
+            "$player.Volume = 1.0; "
+            "$player.Play(); "
+            "$duration = [Math]::Ceiling($player.NaturalDuration.TimeSpan.TotalMilliseconds) + 250; "
+            "Start-Sleep -Milliseconds $duration; "
+            "$player.Stop(); "
+            "$player.Close();"
+        )
+        command = [powershell]
+        if os.path.basename(powershell).lower().startswith("powershell"):
+            command.append("-STA")
+        command.extend(
+            [
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                script,
+                str(audio_path.resolve()),
+            ]
+        )
+        subprocess.run(command, check=False)
 
     def _prepare_uzbek_text(self, text: str) -> str:
         text = text.strip()
@@ -237,6 +272,9 @@ class TTSEngine:
         return cache_path
 
     def _play_audio_file(self, audio_path: Path) -> None:
+        if sys.platform.startswith("win"):
+            self._play_audio_file_windows(audio_path)
+            return
         if not self._audio_player:
             raise RuntimeError("MP3 audio player topilmadi (afplay/ffplay/mpg123/mpv)")
         subprocess.run([*self._audio_player, str(audio_path)], check=False)

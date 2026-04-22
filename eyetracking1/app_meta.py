@@ -1,0 +1,5 @@
+APP_NAME = "GazeSpeak Desktop"
+APP_VERSION = "0.4.0"
+APP_ID = "uz.gazespeak.desktop"
+APP_PUBLISHER = "GazeSpeak"
+APP_DESCRIPTION = "Eye-tracking AAC desktop application for hands-free communication."

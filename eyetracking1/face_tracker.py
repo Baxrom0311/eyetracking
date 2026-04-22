@@ -1,8 +1,15 @@
+import os
+
+from app_paths import APP_CACHE_DIR, ensure_runtime_dirs
+
+ensure_runtime_dirs()
+os.environ.setdefault("MPLCONFIGDIR", str(APP_CACHE_DIR))
+os.environ.setdefault("XDG_CACHE_HOME", str(APP_CACHE_DIR))
+
 import cv2
 import numpy as np
 import mediapipe as mp
 import logging
-import os
 from dataclasses import dataclass, field
 from typing import Optional, List, Tuple
 from settings import (
@@ -125,7 +132,10 @@ class FaceTracker:
         RunningMode = mp.tasks.vision.RunningMode
 
         options = FaceLandmarkerOptions(
-            base_options=BaseOptions(model_asset_path=FACE_LANDMARKER_MODEL),
+            base_options=BaseOptions(
+                model_asset_path=FACE_LANDMARKER_MODEL,
+                delegate=BaseOptions.Delegate.CPU,
+            ),
             running_mode=RunningMode.VIDEO,
             num_faces=MP_MAX_FACES,
             min_face_detection_confidence=MP_MIN_DETECT_CONF,

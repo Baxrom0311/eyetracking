@@ -3,6 +3,7 @@ import json
 import time
 import numpy as np
 import logging
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 from settings import (
@@ -321,7 +322,9 @@ class CalibrationManager:
         try:
             coef  = model.coef_.tolist()
             inter = model.intercept_.tolist()
-            with open(CALIB_FILE, "w") as f:
+            calib_path = Path(CALIB_FILE)
+            calib_path.parent.mkdir(parents=True, exist_ok=True)
+            with calib_path.open("w", encoding="utf-8") as f:
                 json.dump(
                     {
                         "coef": coef,
@@ -336,7 +339,7 @@ class CalibrationManager:
                     },
                     f,
                 )
-            logger.info(f"Kalibrasiya saqlandi: {CALIB_FILE}")
+            logger.info("Kalibrasiya saqlandi: %s", calib_path)
         except Exception as e:
             logger.warning(f"Kalibrasiya saqlanmadi: {e}")
 
@@ -412,7 +415,7 @@ class CalibrationManager:
         expected_screen_h: Optional[int] = None,
     ) -> Optional[object]:
         try:
-            with open(CALIB_FILE) as f:
+            with Path(CALIB_FILE).open(encoding="utf-8") as f:
                 data = json.load(f)
             saved_screen_w = data.get("screen_w")
             saved_screen_h = data.get("screen_h")

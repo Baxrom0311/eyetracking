@@ -1,5 +1,16 @@
 import os
 
+from app_paths import (
+    CALIBRATION_FILE,
+    TTS_CACHE_PATH,
+    USER_FACE_LANDMARKER_MODEL,
+    BUNDLED_FACE_LANDMARKER_MODEL,
+    ensure_runtime_dirs,
+    resolve_face_landmarker_model,
+)
+
+ensure_runtime_dirs()
+
 
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
@@ -22,9 +33,9 @@ MP_MAX_FACES        = 1
 MP_MIN_DETECT_CONF  = 0.5      # 0.7→0.5: bosh buralganda ham yuzni topadi
 MP_MIN_TRACK_CONF   = 0.5      # 0.7→0.5: tracking uzilmasligi uchun
 MP_REFINE_LANDMARKS = True     # iris uchun majburiy
-FACE_LANDMARKER_MODEL = os.path.join(
-    os.path.dirname(__file__), "models", "face_landmarker.task"
-)
+FACE_LANDMARKER_BUNDLED_MODEL = str(BUNDLED_FACE_LANDMARKER_MODEL)
+FACE_LANDMARKER_USER_MODEL = str(USER_FACE_LANDMARKER_MODEL)
+FACE_LANDMARKER_MODEL = str(resolve_face_landmarker_model())
 FACE_LANDMARKER_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
 
 # Iris landmark indekslari (MediaPipe Face Mesh)
@@ -71,7 +82,7 @@ LINEAR_GAZE_Y_MAX    = 0.80
 CALIB_POINTS         = 9      # 3x3 grid — to'liq ekran qamrovi (Tobii/PyGaze standarti)
 CALIB_DWELL_SEC      = 2.0    # Har bir nuqtaga 2 sek (0.5s settle + 1.2s yig'ish + 0.3s o'tish)
 CALIB_SETTLE_SEC     = 0.5    # Nuqta paydo bo'lganda dastlabki 0.5s ni tashlab yuborish (saccade latency)
-CALIB_FILE           = os.path.join(os.path.dirname(__file__), "calibration.json")
+CALIB_FILE           = os.getenv("GAZESPEAK_CALIB_FILE", str(CALIBRATION_FILE))
 CALIB_PREVIEW_SCALE  = 0.22
 CALIB_RIDGE_ALPHA    = 0.02   # 0.05→0.02: 9 nuqtada regularizatsiya kamroq kerak (PMC10966887)
 CALIB_MIN_GAZE_SPAN_X = 0.06
@@ -95,5 +106,5 @@ TTS_EDGE_RATE        = os.getenv("GAZESPEAK_TTS_EDGE_RATE", "-5%")
 TTS_EDGE_VOLUME      = os.getenv("GAZESPEAK_TTS_EDGE_VOLUME", "+0%")
 TTS_CACHE_DIR        = os.getenv(
     "GAZESPEAK_TTS_CACHE_DIR",
-    os.path.join(os.path.dirname(__file__), ".tts_cache"),
+    str(TTS_CACHE_PATH),
 )
