@@ -242,9 +242,9 @@ class FaceTracker:
             )
             head_gx = 0.5 - head_x_offset
             head_gy = 0.5 + head_y_offset
-            w = HEAD_MOVEMENT_WEIGHT
-            gx = (iris_gx + head_gx * w) / (1.0 + w)
-            gy = (iris_gy + head_gy * w) / (1.0 + w)
+            hw = HEAD_MOVEMENT_WEIGHT
+            gx = (iris_gx + head_gx * hw) / (1.0 + hw)
+            gy = (iris_gy + head_gy * hw) / (1.0 + hw)
             data.gaze_norm = (
                 float(np.clip(gx, 0.0, 1.0)),
                 float(np.clip(gy, 0.0, 1.0)),

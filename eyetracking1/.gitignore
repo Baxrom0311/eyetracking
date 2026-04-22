@@ -30,12 +30,12 @@ models/*.task
 
 # Logs
 *.log
+*.log.*
 gazespeak.log
+
+# Generated TTS audio cache
+.tts_cache/
 
 # Environment
 .env
 .env.local
-
-# Docker (ixtiyoriy)
-Dockerfile
-.dockerignore

@@ -1,30 +1,57 @@
-import threading
-import queue
+import asyncio
+import hashlib
 import logging
+import os
+import queue
+import re
 import shutil
 import subprocess
-import re
-from settings import TTS_ENABLED, TTS_RATE, TTS_VOLUME, TTS_LANGUAGE
+import tempfile
+import threading
+import time
+from pathlib import Path
+
+from settings import (
+    TTS_CACHE_DIR,
+    TTS_EDGE_RATE,
+    TTS_EDGE_VOICE,
+    TTS_EDGE_VOLUME,
+    TTS_ENABLED,
+    TTS_LANGUAGE,
+    TTS_PROVIDER,
+    TTS_RATE,
+    TTS_VOLUME,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class TTSEngine:
     """
-    Alohida threadda pyttsx3 orqali ovoz chiqaradi.
-    Queue bilan — asosiy loop ni to'sib qolmaydi.
+    Alohida threadda ovoz chiqaradi.
+    Uzbek uchun Edge neural TTS ishlatiladi, system voice esa fallback.
     """
 
     def __init__(self):
-        self._q      = queue.Queue()
+        self._q = queue.Queue()
         self._enabled = TTS_ENABLED
         self._thread = None
+        self._provider = TTS_PROVIDER if TTS_PROVIDER in {"edge", "auto", "system"} else "edge"
         self._say_voice = None
+        self._say_voice_checked = False
         self._say_available = shutil.which("say") is not None
+        self._pyttsx3_engine = None
+        self._audio_player = self._pick_audio_player()
+        self._edge_temporarily_disabled = False
+        self._edge_retry_at = 0.0
+
+        if self._provider != TTS_PROVIDER:
+            logger.warning("Noma'lum TTS provider '%s', Edge ishlatiladi.", TTS_PROVIDER)
+
         if self._enabled:
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
-            logger.info("TTS engine ishga tushdi.")
+            logger.info("TTS engine ishga tushdi: provider=%s voice=%s", self._provider, TTS_EDGE_VOICE)
         else:
             logger.info("TTS engine o'chirilgan.")
 
@@ -36,6 +63,34 @@ class TTSEngine:
         if not text:
             return
         self._q.put(text)
+
+    def _pick_audio_player(self) -> list[str] | None:
+        players = [
+            ("afplay", ["afplay"]),
+            ("ffplay", ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet"]),
+            ("mpg123", ["mpg123", "-q"]),
+            ("mpv", ["mpv", "--no-video", "--really-quiet"]),
+        ]
+        for binary, command in players:
+            if shutil.which(binary):
+                return command
+        return None
+
+    def _prepare_uzbek_text(self, text: str) -> str:
+        text = text.strip()
+        if not text:
+            return text
+
+        text = (
+            text.replace("`", "'")
+            .replace("’", "'")
+            .replace("‘", "'")
+            .replace("ʼ", "'")
+            .replace("ʻ", "'")
+        )
+        text = re.sub(r"([OoGg])'", r"\1ʻ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
 
     def _normalize_uzbek_text(self, text: str) -> str:
         text = text.strip()
@@ -75,10 +130,15 @@ class TTSEngine:
         normalized = re.sub(r"\s+", " ", normalized).strip()
         return normalized
 
-    def _prepare_text(self, text: str) -> str:
+    def _prepare_fallback_text(self, text: str) -> str:
         if TTS_LANGUAGE == "uz":
             return self._normalize_uzbek_text(text)
         return text
+
+    def _prepare_edge_text(self, text: str) -> str:
+        if TTS_LANGUAGE == "uz":
+            return self._prepare_uzbek_text(text)
+        return re.sub(r"\s+", " ", text).strip()
 
     def _pick_say_voice(self) -> str | None:
         if not self._say_available:
@@ -102,7 +162,7 @@ class TTSEngine:
                     return voice_name
         return None
 
-    def _configure_engine_voice(self, engine):
+    def _configure_engine_voice(self, engine) -> None:
         try:
             voices = engine.getProperty("voices") or []
         except Exception:
@@ -129,43 +189,122 @@ class TTSEngine:
                 except Exception:
                     continue
 
-    def _run(self):
-        engine = None
-        use_say = False
-        try:
-            if self._say_available:
-                use_say = True
-                self._say_voice = self._pick_say_voice()
-                if self._say_voice:
-                    logger.info("TTS say voice tanlandi: %s", self._say_voice)
-                else:
-                    logger.info("TTS say default voice ishlatiladi.")
-            else:
-                import pyttsx3
+    def _should_use_edge(self) -> bool:
+        if self._provider not in {"edge", "auto"}:
+            return False
+        if self._edge_temporarily_disabled:
+            return False
+        if time.monotonic() < self._edge_retry_at:
+            return False
+        return bool(TTS_EDGE_VOICE)
 
-                engine = pyttsx3.init()
-                engine.setProperty("rate", TTS_RATE)
-                engine.setProperty("volume", TTS_VOLUME)
-                self._configure_engine_voice(engine)
-        except Exception as e:
-            logger.error(f"TTS init xatosi: {e}")
+    def _edge_cache_path(self, text: str) -> Path:
+        key = "|".join([TTS_EDGE_VOICE, TTS_EDGE_RATE, TTS_EDGE_VOLUME, text])
+        digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+        return Path(TTS_CACHE_DIR) / f"{digest}.mp3"
+
+    async def _write_edge_audio(self, text: str, output_path: str) -> None:
+        import edge_tts
+
+        communicate = edge_tts.Communicate(
+            text=text,
+            voice=TTS_EDGE_VOICE,
+            rate=TTS_EDGE_RATE,
+            volume=TTS_EDGE_VOLUME,
+        )
+        await communicate.save(output_path)
+
+    def _ensure_edge_audio(self, text: str) -> Path:
+        cache_path = self._edge_cache_path(text)
+        if cache_path.exists() and cache_path.stat().st_size > 0:
+            return cache_path
+
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(
+            prefix=f"{cache_path.stem}.",
+            suffix=".tmp.mp3",
+            dir=str(cache_path.parent),
+        )
+        os.close(fd)
+        try:
+            asyncio.run(self._write_edge_audio(text, tmp_path))
+            if os.path.getsize(tmp_path) <= 0:
+                raise RuntimeError("Edge TTS bo'sh audio qaytardi")
+            os.replace(tmp_path, cache_path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+        return cache_path
+
+    def _play_audio_file(self, audio_path: Path) -> None:
+        if not self._audio_player:
+            raise RuntimeError("MP3 audio player topilmadi (afplay/ffplay/mpg123/mpv)")
+        subprocess.run([*self._audio_player, str(audio_path)], check=False)
+
+    def _speak_edge(self, text: str) -> None:
+        prepared_text = self._prepare_edge_text(text)
+        if not prepared_text:
+            return
+        audio_path = self._ensure_edge_audio(prepared_text)
+        self._play_audio_file(audio_path)
+
+    def _ensure_pyttsx3_engine(self):
+        if self._pyttsx3_engine is not None:
+            return self._pyttsx3_engine
+
+        import pyttsx3
+
+        engine = pyttsx3.init()
+        engine.setProperty("rate", TTS_RATE)
+        engine.setProperty("volume", TTS_VOLUME)
+        self._configure_engine_voice(engine)
+        self._pyttsx3_engine = engine
+        return engine
+
+    def _speak_system(self, text: str) -> None:
+        prepared_text = self._prepare_fallback_text(text)
+        if not prepared_text:
             return
 
+        if self._say_available:
+            if not self._say_voice_checked:
+                self._say_voice = self._pick_say_voice()
+                self._say_voice_checked = True
+                if self._say_voice:
+                    logger.info("TTS say fallback voice tanlandi: %s", self._say_voice)
+                else:
+                    logger.info("TTS say default fallback voice ishlatiladi.")
+
+            cmd = ["say", "-r", str(TTS_RATE)]
+            if self._say_voice:
+                cmd.extend(["-v", self._say_voice])
+            cmd.append(prepared_text)
+            subprocess.run(cmd, check=False)
+            return
+
+        engine = self._ensure_pyttsx3_engine()
+        engine.say(prepared_text)
+        engine.runAndWait()
+
+    def _run(self):
         while True:
             try:
                 text = self._q.get(timeout=0.5)
                 if text is None:
                     break
-                prepared_text = self._prepare_text(text)
-                if use_say:
-                    cmd = ["say", "-r", str(TTS_RATE)]
-                    if self._say_voice:
-                        cmd.extend(["-v", self._say_voice])
-                    cmd.append(prepared_text)
-                    subprocess.run(cmd, check=False)
-                else:
-                    engine.say(prepared_text)
-                    engine.runAndWait()
+
+                if self._should_use_edge():
+                    try:
+                        self._speak_edge(text)
+                        continue
+                    except Exception as e:
+                        logger.warning("Edge Uzbek TTS ishlamadi, fallback ishlatiladi: %s", e)
+                        if self._provider == "auto":
+                            self._edge_temporarily_disabled = True
+                        else:
+                            self._edge_retry_at = time.monotonic() + 30.0
+
+                self._speak_system(text)
             except queue.Empty:
                 continue
             except Exception as e:

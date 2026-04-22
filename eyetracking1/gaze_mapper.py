@@ -31,8 +31,8 @@ class KalmanGaze:
         self.P = np.eye(4, dtype=np.float32) * 500
         self.F = np.array([[1,0,1,0],[0,1,0,1],[0,0,1,0],[0,0,0,1]], np.float32)
         self.H = np.array([[1,0,0,0],[0,1,0,0]], np.float32)
-        self.R = np.eye(2, dtype=np.float32) * 50
-        self.Q = np.eye(4, dtype=np.float32) * 0.1
+        self.R = np.eye(2, dtype=np.float32) * 25   # 50→25: tezroq javob, sal titroqroq
+        self.Q = np.eye(4, dtype=np.float32) * 0.15  # 0.1→0.15: harakatga tezroq moslashadi
 
     def update(self, mx: float, my: float) -> Tuple[float, float]:
         # Predict
@@ -106,12 +106,10 @@ class GazeMapper:
 
     def _is_valid_calibration(self, model) -> bool:
         try:
+            # 4 burchak + markaz — validatsiya nuqtalari
+            corners = [(0.12, 0.12), (0.88, 0.12), (0.12, 0.88), (0.88, 0.88), (0.50, 0.50)]
             samples = np.array([
-                [0.15, 0.15, 0.15**2, 0.15**2, 0.15 * 0.15],
-                [0.85, 0.15, 0.85**2, 0.15**2, 0.85 * 0.15],
-                [0.15, 0.85, 0.15**2, 0.85**2, 0.15 * 0.85],
-                [0.85, 0.85, 0.85**2, 0.85**2, 0.85 * 0.85],
-                [0.50, 0.50, 0.50**2, 0.50**2, 0.50 * 0.50],
+                [nx, ny, nx**2, ny**2, nx * ny] for nx, ny in corners
             ], dtype=float)
             pred = np.asarray(model.predict(samples), dtype=float)
             span_x = float(np.ptp(pred[:, 0]))

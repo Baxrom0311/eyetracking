@@ -16,10 +16,10 @@ from settings import (
     CALIB_MIN_GAZE_SPAN_Y,
     CALIB_MIN_POINTS_REQUIRED,
     CALIB_OUTLIER_Z,
-    CALIB_POINTS,
     CALIB_PREVIEW_SCALE,
     CALIB_RIDGE_ALPHA,
-    OVERLAY_CURSOR_COLOR,
+    CALIB_SETTLE_SEC,
+    CALIB_SACCADE_THRESHOLD,
 )
 
 logger = logging.getLogger(__name__)
@@ -60,14 +60,15 @@ class RidgeCalibrationModel:
         return x_data @ self.coef_.T + self.intercept_
 
 
-def _build_9_points(sw: int, sh: int) -> List[CalibrationPoint]:
-    """3x3 grid — 9 nuqta. Haqiqiy chekkalarga qarash qiyin bo'lgani uchun sal ichkariroqdan olinadi."""
-    pts = []
-    # Nuqtalarni ekran chetidan biroz ichkariga suramiz x(15%), y(15%)
-    for row in [0.15, 0.5, 0.85]:
-        for col in [0.15, 0.5, 0.85]:
-            pts.append(CalibrationPoint(int(col * sw), int(row * sh)))
-    return pts
+def _build_calibration_points(sw: int, sh: int) -> List[CalibrationPoint]:
+    """
+    9 nuqta: 3x3 grid, 12%/88% marginlar.
+    Tobii Pro / PyGaze standarti — to'liq ekran qamrovi va burchaklar.
+    Middle-edge nuqtalar (top-center, left-center) interpolatsiya sifatini oshiradi.
+    """
+    margins = [0.12, 0.50, 0.88]
+    positions = [(x, y) for y in margins for x in margins]
+    return [CalibrationPoint(int(col * sw), int(row * sh)) for col, row in positions]
 
 
 class CalibrationManager:
@@ -80,7 +81,7 @@ class CalibrationManager:
     def __init__(self, screen_w: int, screen_h: int):
         self.sw = screen_w
         self.sh = screen_h
-        self._points  = _build_9_points(screen_w, screen_h)
+        self._points  = _build_calibration_points(screen_w, screen_h)
         self._current = 0
         self._start_t = 0.0
         self._model   = None
@@ -101,9 +102,10 @@ class CalibrationManager:
         logger.info("Kalibrasiya boshlandi.")
 
     # ── Har frame da chaqiriladi ───────────────────────────
-    def update(self, gaze_norm: Optional[Tuple[float, float]]) -> bool:
+    def update(self, gaze_norm: Optional[Tuple[float, float]], is_blinking: bool = False) -> bool:
         """
         gaze_norm: (nx, ny) 0-1 oralig'ida.
+        is_blinking: True bo'lsa sample tashlanadi (ko'z yumilgan).
         True qaytarsa → kalibrasiya tugadi.
         """
         if not self.active or self.done:
@@ -130,7 +132,10 @@ class CalibrationManager:
             self._pause_t = None
 
         elapsed = now - self._start_t
-        pt.samples.append(gaze_norm)
+
+        # Settling period: dastlabki 0.5s da sample yig'maslik (saccade latency)
+        if elapsed >= CALIB_SETTLE_SEC and not is_blinking:
+            pt.samples.append(gaze_norm)
 
         if elapsed >= CALIB_DWELL_SEC:
             logger.info(f"Nuqta {self._current+1}/{len(self._points)} tayyor "
@@ -223,6 +228,9 @@ class CalibrationManager:
             if not pt.samples:
                 continue
             arr = np.asarray(pt.samples, dtype=float)
+            # 1-bosqich: saccade filtri (tez sakrashlarni olib tashlash)
+            arr = self._filter_saccades(arr)
+            # 2-bosqich: statistik outlier filtri (MAD)
             filtered = self._filter_outliers(arr)
             if filtered.shape[0] < CALIB_MIN_FILTERED_SAMPLES:
                 logger.warning(
@@ -331,6 +339,24 @@ class CalibrationManager:
             logger.info(f"Kalibrasiya saqlandi: {CALIB_FILE}")
         except Exception as e:
             logger.warning(f"Kalibrasiya saqlanmadi: {e}")
+
+    @staticmethod
+    def _filter_saccades(samples: np.ndarray) -> np.ndarray:
+        """
+        Frame-to-frame tez sakrashlarni (saccade) olib tashlaydi.
+        Agar ketma-ket ikkita sample orasidagi masofa > CALIB_SACCADE_THRESHOLD bo'lsa,
+        ikkinchi sample tashlanadi.
+        """
+        if samples.ndim != 2 or samples.shape[0] < 3:
+            return samples
+        diffs = np.linalg.norm(np.diff(samples, axis=0), axis=1)
+        # Birinchi sample har doim saqlanadi, keyingilari faqat masofa past bo'lsa
+        keep = np.ones(samples.shape[0], dtype=bool)
+        keep[1:] = diffs <= CALIB_SACCADE_THRESHOLD
+        filtered = samples[keep]
+        if filtered.shape[0] < 3:
+            return samples  # juda kam qolsa, xom holatda qaytarish
+        return filtered
 
     @staticmethod
     def _filter_outliers(samples: np.ndarray) -> np.ndarray:

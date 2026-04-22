@@ -1,58 +1,45 @@
 # GazeSpeak
 
-Ko'z bilan AAC tanlash, kalibrasiya, TTS va yordamchi desktop preview.
+Ko'z bilan AAC muloqot tizimi. Harakat imkoniyati cheklangan odamlar uchun.
+
+## Arxitektura
+
+```
+Native Python (kamera + MediaPipe) → Qt Desktop AAC UI
+```
+
+- **desktop_app.py** — asosiy bemor interfeysi: Qt desktop UI, kamera/tracker bilan to'g'ridan-to'g'ri ishlaydi
+- **face_tracker.py / gaze_mapper.py / calibration.py** — ko'z tracking, mapping va kalibratsiya core qismi
+- WebSocket/browser qatlamlari olib tashlangan, gaze koordinata UIga bevosita signal orqali boradi
 
 ## O'rnatish
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3.12 -m venv .venv312
+source .venv312/bin/activate
 pip install -r requirements.txt
 ```
 
-`requirements.txt` desktop preview va web AAC uchun umumiy paketlarni o'rnatadi.
-`models/face_landmarker.task` fayli repo ichida bo'lishi kerak.
+`models/face_landmarker.task` fayli kerak (birinchi ishga tushirishda avtomatik yuklanadi).
 
 ## Ishga tushirish
 
-Face tracking preview:
-
 ```bash
-python test_face.py
+python desktop_app.py
 ```
 
-To'liq ilova:
+Desktop app WebSocket/JSON qatlamisiz ishlaydi, shuning uchun bemor uchun latency pastroq bo'ladi.
 
-```bash
-python main.py
-```
+## Kalibrasiya
 
-Web AAC paneli:
-
-```bash
-cd web
-uvicorn app:app --host 127.0.0.1 --port 8000
-```
-
-Brauzerda `http://127.0.0.1:8000` ni oching. AAC ishlatish uchun asosiy yo'l shu.
-
-## Tugmalar
-
-- `Q` yoki `ESC`: chiqish
-- `C`: qayta kalibrasiya
-- `D`: debug landmark overlay
-- `M`: cursor control on/off
-- `R`: zona dwell timer reset
-
-## Oqim
-
-1. Web panel yoki desktop preview calibration surface bo'yicha 9 nuqtali kalibrasiyani qiladi.
-2. Kalibrasiya tugagach gaze AAC tile'lariga yoki desktop preview overlay'ga map qilinadi.
-3. Web panel katta tugmalarni dwell orqali tanlaydi va matnni TTS ga yuboradi.
-4. Desktop preview default holatda AAC/zone signal rejimida ishlaydi; `M` pointer rejimiga o'tkazadi.
+1. Desktop app ichida "Kalibratsiya" tugmasini bosing
+2. 9 ta nuqtaga navbatma-navbat qarang (har biri 2 sek)
+3. Kalibrasiya avtomatik saqlanadi
 
 ## Eslatma
 
-- macOS'da kamera ruxsati `System Settings -> Privacy & Security -> Camera` ichida terminalingizga berilgan bo'lishi kerak.
-- TTS uchun `pyttsx3` bo'lmasa, macOS `say` fallback ishlatiladi.
-- Android WebSocket default xavfsiz host: `ws://127.0.0.1:8765`
+- macOS da kamera ruxsati: System Settings → Privacy & Security → Camera
+- TTS default holatda `uz-UZ-MadinaNeural` Uzbek neural voice orqali gapiradi (`edge-tts`)
+- Birinchi marta gapirganda internet kerak bo'ladi; tayyor audio `.tts_cache/` ichida saqlanadi va keyingi safar tezroq ijro qilinadi
+- Erkak ovozi kerak bo'lsa: `GAZESPEAK_TTS_EDGE_VOICE=uz-UZ-SardorNeural python desktop_app.py`
+- Internet bo'lmasa macOS `say` fallback ishlatiladi, lekin uning Uzbek talaffuzi neural voice darajasida aniq emas
